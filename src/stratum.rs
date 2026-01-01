@@ -124,9 +124,11 @@ fn handle_client(
             };
 
             let last_h = *height_notify.lock().unwrap();
+            let now_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+            let should_update = current_height != last_h || (now_time % 30 == 0); // Update every 30s
 
-            // Notify if New Block (Height changed) OR First Notification (Height mismatch)
-            if current_height != last_h {
+            // Notify if New Block (Height changed) OR Periodic Refresh
+            if should_update {
                 // Generate New Job
                 let miner = miner_notify.lock().unwrap().clone();
                 let new_block = { // Removed mut, not needed for get_mining_candidate
@@ -141,7 +143,8 @@ fn handle_client(
 
                 // Send Notify
                 let ntime = format!("{:08x}", new_block.timestamp);
-                let job_id = new_block.index.to_string();
+                // FIX: Unique Job ID (Height + Timestamp) to force miner update on periodic refresh
+                let job_id = format!("{}_{}", new_block.index, new_block.timestamp);
                 
                 let prev_bytes = hex::decode(&new_block.previous_hash).unwrap_or(vec![0u8; 32]);
                 let mut prev_le = prev_bytes;
@@ -241,7 +244,8 @@ fn handle_client(
                             ) {
                                 let template_guard = current_block_template.lock().unwrap();
                                 if let Some(block_template) = template_guard.as_ref() {
-                                    if jid == block_template.index.to_string() {
+                                    // Robust check: Job ID must contain the Index
+                                    if jid.starts_with(&block_template.index.to_string()) {
                                         let mut block = block_template.clone();
                                         
                                         // 1. Reconstruct Merkle Root
