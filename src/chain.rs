@@ -257,7 +257,12 @@ impl Blockchain {
         };
 
         // Use Standard Difficulty 0x1d00ffff for Genesis to match chain config
-        let genesis_block = Block::new(0, String::from("0"), vec![premine_tx], 0x1d00ffff, 0);
+        let mut genesis_block = Block::new(0, String::from("0"), vec![premine_tx], 0x1d00ffff, 0);
+        
+        // FIX: Enforce Deterministic Genesis Timestamp and Hash for network compatibility
+        genesis_block.timestamp = 1767077203;
+        genesis_block.hash = genesis_block.calculate_hash();
+
         self.chain.push(genesis_block.clone());
         if let Some(ref db) = self.db {
             let _ = db.save_block(&genesis_block);
