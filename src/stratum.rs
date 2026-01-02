@@ -457,9 +457,19 @@ fn handle_client(
                                                                 }
                                                                 
                                                                 // Generate Transactions
-                                                                for (miner, score) in miner_scores {
-                                                                    let share_ratio = score as f64 / total_valid_shares as f64;
-                                                                    let gross_payout = (total_reward as f64 * share_ratio) as u64;
+                                                                // Generate Transactions
+                                                                let mut distributed = 0;
+                                                                // Use index to identify the last miner for dust adjustment (optional, or just cap)
+                                                                for (i, (miner, score)) in miner_scores.iter().enumerate() {
+                                                                    let share_ratio = *score as f64 / total_valid_shares as f64;
+                                                                    let mut gross_payout = (total_reward as f64 * share_ratio) as u64;
+                                                                    
+                                                                    // SAFETY CHECK: Ensure we never exceed total_reward
+                                                                    if distributed + gross_payout > total_reward {
+                                                                        gross_payout = total_reward.saturating_sub(distributed);
+                                                                    }
+                                                                    distributed += gross_payout;
+
                                                                     let fee = 100_000; // Standard Tx Fee
                                                                     
                                                                     if gross_payout > fee {
@@ -481,6 +491,7 @@ fn handle_client(
                                                                         // println!("[Pool PPLNS] Skipped Dust Payout: {} VLT to {}", gross_payout as f64 / 1e8, miner);
                                                                     }
                                                                 }
+                                                                println!("[Pool PPLNS] Total Distributed: {} / {} VLT", distributed as f64 / 1e8, total_reward as f64 / 1e8);
                                                                 
                                                                 // Save Txs
                                                                 chain_lock.save();
