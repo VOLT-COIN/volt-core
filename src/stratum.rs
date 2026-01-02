@@ -297,78 +297,67 @@ fn handle_client(
                                             let block_clone = block.clone(); // Clone for logic
                                             
                                             // PPLNS LOGIC: Distribute Rewards
-                                            // 1. Calculate Shares
-                                            let total_valid_shares = shares_ref.lock().unwrap().len() as u64;
-                                            if total_valid_shares > 0 {
-                                                println!("[Pool] Distributing rewards via PPLNS to {} shares...", total_valid_shares);
-                                                
-                                                // Pool Config: Read from simple text file
-                                                let pool_priv_key_hex = std::fs::read_to_string("pool_key.txt")
-                                                    .unwrap_or_else(|_| "00".repeat(32))
-                                                    .trim()
-                                                    .to_string();
+                                            // Payout Logic Removed from here
 
-                                                let pool_addr = "024dea39ce2e873d5be2d8e092044a7dbd9cfa2dadcba5d32e9b141b7361422d56"; // REPLACE WITH REAL POOL ADDR
-                                                
-                                                // Load Key
-                                                if let Ok(key_bytes) = hex::decode(&pool_priv_key_hex) {
-                                                    if let Ok(signing_key) = k256::ecdsa::SigningKey::from_slice(&key_bytes) {
-                                                        
-                                                        // Calculate Reward (50 VLT)
-                                                        let total_reward = 50 * 100_000_000;
-                                                        
-                                                        // Group by Miner
-                                                        let mut miner_scores = std::collections::HashMap::new();
-                                                        let shares = shares_ref.lock().unwrap();
-                                                        for s in shares.iter() {
-                                                            *miner_scores.entry(s.miner.clone()).or_insert(0) += 1;
-                                                        }
-                                                        
-                                                        // 0. Determine Base Nonce (State + Pending)
-                                                        let mut current_nonce = *chain_lock.state.nonces.get(pool_addr).unwrap_or(&0);
-                                                        
-                                                        // scan pending to find highest used nonce
-                                                        for tx in &chain_lock.pending_transactions {
-                                                            if tx.sender == pool_addr {
-                                                                if tx.nonce > current_nonce {
-                                                                    current_nonce = tx.nonce;
-                                                                }
-                                                            }
-                                                        }
-                                                        
-                                                        // Create Tx for each miner
-                                                        for (m_addr, score) in miner_scores {
-                                                            let share_amt = (total_reward * score) / total_valid_shares;
-                                                            if share_amt > 1000 { // Dust limit
-                                                                // Increment Nonce for THIS transaction
-                                                                current_nonce += 1;
-                                                                
-                                                                let mut payout_tx = crate::transaction::Transaction::new(
-                                                                    pool_addr.to_string(),
-                                                                    m_addr.clone(),
-                                                                    share_amt,
-                                                                    "VLT".to_string(),
-                                                                    current_nonce
-                                                                );
-                                                                
-                                                                // Sign
-                                                                payout_tx.sign(&signing_key);
-                                                                
-                                                                println!("[Pool] Payout: {} VLT to {} (Nonce: {})", share_amt as f64 / 1e8, m_addr, current_nonce);
-                                                                
-                                                                // Inject
-                                                                chain_lock.pending_transactions.push(payout_tx);
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                                // Clear Shares for next round (Or keep for sliding window PPLNS? User said "find block -> distribute", implying round-based (PROP/PPLNS hybrid))
-                                                shares_ref.lock().unwrap().clear();
-                                            }
 
                                             if chain_lock.submit_block(block_clone) {
                                                 chain_lock.save();
                                                 result = Some(serde_json::json!(true));
+
+                                                // ---------------------------------------------------------
+                                                // PPLNS PAYOUT LOGIC (Moved inside success block)
+                                                // ---------------------------------------------------------
+                                                let total_valid_shares = shares_ref.lock().unwrap().len() as u64;
+                                                if total_valid_shares > 0 {
+                                                    println!("[Pool] Block Accepted! Distributing rewards via PPLNS to {} shares...", total_valid_shares);
+                                                    
+                                                    // Pool Config
+                                                    let pool_priv_key_hex = std::fs::read_to_string("pool_key.txt")
+                                                        .unwrap_or_else(|_| "00".repeat(32)).trim().to_string();
+
+                                                    let pool_addr = "024dea39ce2e873d5be2d8e092044a7dbd9cfa2dadcba5d32e9b141b7361422d56"; 
+                                                    
+                                                    // Load Key
+                                                    if let Ok(key_bytes) = hex::decode(&pool_priv_key_hex) {
+                                                        if let Ok(signing_key) = k256::ecdsa::SigningKey::from_slice(&key_bytes) {
+                                                            
+                                                            let total_reward = 50 * 100_000_000;
+                                                            
+                                                            // Group by Miner
+                                                            let mut miner_scores = std::collections::HashMap::new();
+                                                            let shares = shares_ref.lock().unwrap();
+                                                            for s in shares.iter() {
+                                                                *miner_scores.entry(s.miner.clone()).or_insert(0) += 1;
+                                                            }
+                                                            
+                                                            // 0. Base Nonce (Robust)
+                                                            let mut current_nonce = *chain_lock.state.nonces.get(pool_addr).unwrap_or(&0);
+                                                            for tx in &chain_lock.pending_transactions {
+                                                                if tx.sender == pool_addr && tx.nonce > current_nonce {
+                                                                    current_nonce = tx.nonce;
+                                                                }
+                                                            }
+                                                            
+                                                            // Create Payouts
+                                                            for (m_addr, score) in miner_scores {
+                                                                let share_amt = (total_reward * score) / total_valid_shares;
+                                                                if share_amt > 1000 {
+                                                                    current_nonce += 1;
+                                                                    let mut payout_tx = crate::transaction::Transaction::new(
+                                                                        pool_addr.to_string(), m_addr.clone(), share_amt, "VLT".to_string(), current_nonce
+                                                                    );
+                                                                    payout_tx.sign(&signing_key);
+                                                                    println!("[Pool] Payout: {} VLT to {} (Nonce: {})", share_amt as f64 / 1e8, m_addr, current_nonce);
+                                                                    chain_lock.pending_transactions.push(payout_tx);
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    // Clear Shares ONLY after successful submission
+                                                    shares_ref.lock().unwrap().clear();
+                                                }
+                                                // ---------------------------------------------------------
+
                                             } else {
                                                 result = Some(serde_json::json!(false));
                                             }
