@@ -41,6 +41,11 @@ impl Database {
         self.db.open_tree("addr_index")
     }
 
+    // Helper: Miner Ledger (for PPS/Pool balances)
+    pub fn miner_ledger(&self) -> sled::Result<sled::Tree> {
+        self.db.open_tree("miner_ledger")
+    }
+
     pub fn save_block(&self, block: &Block) -> sled::Result<()> {
         let blocks = self.blocks()?;
         let txs = self.txs()?;
@@ -167,7 +172,7 @@ impl Database {
              let iter = tree.scan_prefix(prefix.as_bytes());
              for item in iter {
                  if let Ok((key, _)) = item {
-                     if let Ok(key_str) = str::from_utf8(&key) {
+                     if let Ok(key_str) = std::str::from_utf8(&key) {
                          let parts: Vec<&str> = key_str.split(':').collect();
                          if parts.len() == 2 {
                              let txid = parts[1];
@@ -184,5 +189,52 @@ impl Database {
         // Sort by timestamp desc
         history.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
         history
+    }
+
+    // --- PPS Ledger Methods ---
+    pub fn credit_miner(&self, miner: &str, amount: u64) -> sled::Result<u64> {
+        let ledger = self.miner_ledger()?;
+        let old_bal = self.get_miner_balance(miner);
+        let new_bal = old_bal + amount;
+        
+        ledger.insert(miner.as_bytes(), &new_bal.to_le_bytes())?;
+        Ok(new_bal)
+    }
+
+    pub fn debit_miner(&self, miner: &str, amount: u64) -> sled::Result<u64> {
+        let ledger = self.miner_ledger()?;
+        let old_bal = self.get_miner_balance(miner);
+        if old_bal < amount { return Ok(old_bal); } // Should check before call
+        
+        let new_bal = old_bal - amount;
+        ledger.insert(miner.as_bytes(), &new_bal.to_le_bytes())?;
+        Ok(new_bal)
+    }
+
+    pub fn get_miner_balance(&self, miner: &str) -> u64 {
+        if let Ok(ledger) = self.miner_ledger() {
+            if let Ok(Some(bytes)) = ledger.get(miner) {
+                let mut arr = [0u8; 8];
+                arr.copy_from_slice(&bytes);
+                return u64::from_le_bytes(arr);
+            }
+        }
+        0
+    }
+    
+    pub fn get_all_miner_balances(&self) -> Vec<(String, u64)> {
+        let mut res = Vec::new();
+        if let Ok(ledger) = self.miner_ledger() {
+             for item in ledger.iter() {
+                 if let Ok((k, v)) = item {
+                     if let Ok(miner) = std::str::from_utf8(&k) {
+                         let mut arr = [0u8; 8];
+                         arr.copy_from_slice(&v);
+                         res.push((miner.to_string(), u64::from_le_bytes(arr)));
+                     }
+                 }
+             }
+        }
+        res
     }
 }

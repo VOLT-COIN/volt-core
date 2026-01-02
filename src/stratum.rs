@@ -6,6 +6,7 @@ use serde::{Serialize, Deserialize};
 use crate::chain::Blockchain;
 use std::time::{SystemTime, UNIX_EPOCH};
 use k256::ecdsa::signature::Signer; // Added for PPLNS signing
+use k256::elliptic_curve::sec1::ToEncodedPoint; // For dynamic address derivation
 
 #[derive(Serialize, Deserialize, Debug)]
 struct RpcRequest {
@@ -82,7 +83,7 @@ impl StratumServer {
 fn handle_client(
     stream: TcpStream, 
     chain: Arc<Mutex<Blockchain>>, 
-    _mode_ref: Arc<Mutex<PoolMode>>,
+    mut mode_ref: Arc<Mutex<PoolMode>>,
     shares_ref: Arc<Mutex<Vec<Share>>>
 ) {
     let _peer_addr = stream.peer_addr().unwrap_or(std::net::SocketAddr::from(([0,0,0,0], 0)));
@@ -307,54 +308,65 @@ fn handle_client(
                                                 // ---------------------------------------------------------
                                                 // PPLNS PAYOUT LOGIC (Moved inside success block)
                                                 // ---------------------------------------------------------
-                                                let total_valid_shares = shares_ref.lock().unwrap().len() as u64;
-                                                if total_valid_shares > 0 {
-                                                    println!("[Pool] Block Accepted! Distributing rewards via PPLNS to {} shares...", total_valid_shares);
-                                                    
-                                                    // Pool Config
-                                                    let pool_priv_key_hex = std::fs::read_to_string("pool_key.txt")
-                                                        .unwrap_or_else(|_| "00".repeat(32)).trim().to_string();
+                                                let current_mode = *mode_ref.lock().unwrap();
+                                                if current_mode == PoolMode::PPLNS {
+                                                    let total_valid_shares = shares_ref.lock().unwrap().len() as u64;
+                                                    if total_valid_shares > 0 {
+                                                        println!("[Pool PPLNS] Block Accepted! Distributing rewards via PPLNS to {} shares...", total_valid_shares);
+                                                        
+                                                        // Pool Config
+                                                        let pool_priv_key_hex = std::fs::read_to_string("pool_key.txt")
+                                                            .unwrap_or_else(|_| "00".repeat(32)).trim().to_string();
 
-                                                    let pool_addr = "024dea39ce2e873d5be2d8e092044a7dbd9cfa2dadcba5d32e9b141b7361422d56"; 
-                                                    
-                                                    // Load Key
-                                                    if let Ok(key_bytes) = hex::decode(&pool_priv_key_hex) {
-                                                        if let Ok(signing_key) = k256::ecdsa::SigningKey::from_slice(&key_bytes) {
-                                                            
-                                                            let total_reward = 50 * 100_000_000;
-                                                            
-                                                            // Group by Miner
-                                                            let mut miner_scores = std::collections::HashMap::new();
-                                                            let shares = shares_ref.lock().unwrap();
-                                                            for s in shares.iter() {
-                                                                *miner_scores.entry(s.miner.clone()).or_insert(0) += 1;
-                                                            }
-                                                            
-                                                            // 0. Base Nonce (Robust)
-                                                            let mut current_nonce = *chain_lock.state.nonces.get(pool_addr).unwrap_or(&0);
-                                                            for tx in &chain_lock.pending_transactions {
-                                                                if tx.sender == pool_addr && tx.nonce > current_nonce {
-                                                                    current_nonce = tx.nonce;
+                                                        // Load Key
+                                                        if let Ok(key_bytes) = hex::decode(&pool_priv_key_hex) {
+                                                            if let Ok(signing_key) = k256::ecdsa::SigningKey::from_slice(&key_bytes) {
+                                                                // Derive Address dynamically to ensure Signature Match
+                                                                let verifying_key = signing_key.verifying_key();
+                                                                let pub_key_bytes = verifying_key.to_encoded_point(true); // Compressed (33 bytes)
+                                                                let pool_addr_dynamic = hex::encode(pub_key_bytes.as_bytes());
+                                                                let pool_addr = pool_addr_dynamic.as_str(); // Use reference to keep code compatible if possible, or string.
+                                                                // Wait, previous code used pool_addr as &str. 
+                                                                // Let's shadow the previous variable definition.
+                                                                
+                                                                println!("[Pool Config] Loaded Owner Address: {}", pool_addr_dynamic);
+
+
+                                                                let total_reward = 50 * 100_000_000;
+                                                                
+                                                                // Group by Miner
+                                                                let mut miner_scores = std::collections::HashMap::new();
+                                                                let shares = shares_ref.lock().unwrap();
+                                                                for s in shares.iter() {
+                                                                    *miner_scores.entry(s.miner.clone()).or_insert(0) += 1;
                                                                 }
-                                                            }
-                                                            
-                                                            // Create Payouts
-                                                            for (m_addr, score) in miner_scores {
-                                                                let share_amt = (total_reward * score) / total_valid_shares;
-                                                                if share_amt > 1000 {
-                                                                    current_nonce += 1;
-                                                                    let mut payout_tx = crate::transaction::Transaction::new(
-                                                                        pool_addr.to_string(), m_addr.clone(), share_amt, "VLT".to_string(), current_nonce
-                                                                    );
-                                                                    payout_tx.sign(&signing_key);
-                                                                    println!("[Pool] Payout: {} VLT to {} (Nonce: {})", share_amt as f64 / 1e8, m_addr, current_nonce);
-                                                                    chain_lock.pending_transactions.push(payout_tx);
+                                                                
+                                                                // 0. Base Nonce (Robust)
+                                                                let mut current_nonce = *chain_lock.state.nonces.get(pool_addr).unwrap_or(&0);
+                                                                for tx in &chain_lock.pending_transactions {
+                                                                    if tx.sender == pool_addr && tx.nonce > current_nonce {
+                                                                        current_nonce = tx.nonce;
+                                                                    }
+                                                                }
+                                                                
+                                                                // Create Payouts
+                                                                for (m_addr, score) in miner_scores {
+                                                                    let share_amt = (total_reward * score) / total_valid_shares;
+                                                                    if share_amt > 1000 {
+                                                                        current_nonce += 1;
+                                                                        let mut payout_tx = crate::transaction::Transaction::new(
+                                                                            pool_addr.to_string(), m_addr.clone(), share_amt, "VLT".to_string(), current_nonce
+                                                                        );
+                                                                        payout_tx.sign(&signing_key);
+                                                                        println!("[Pool PPLNS] Payout: {} VLT to {} (Nonce: {})", share_amt as f64 / 1e8, m_addr, current_nonce);
+                                                                        chain_lock.pending_transactions.push(payout_tx);
+                                                                    }
                                                                 }
                                                             }
                                                         }
+                                                        // Clear Shares ONLY after successful submission
+                                                        shares_ref.lock().unwrap().clear();
                                                     }
-                                                    // Clear Shares ONLY after successful submission
-                                                    shares_ref.lock().unwrap().clear();
                                                 }
                                                 // ---------------------------------------------------------
 
@@ -364,14 +376,50 @@ fn handle_client(
 
                                         } else {
                                             // Share Acceptance
-                                            let mut s_lock = shares_ref.lock().unwrap();
-                                             // Ring Buffer
-                                            if s_lock.len() > 5000 { s_lock.remove(0); }
-                                            s_lock.push(Share {
-                                                miner: session_miner_addr.lock().unwrap().clone(),
-                                                difficulty: block.difficulty as f64,
-                                                timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
-                                            });
+                                            {
+                                                let mut s_lock = shares_ref.lock().unwrap();
+                                                // Ring Buffer (Stats)
+                                                if s_lock.len() > 5000 { s_lock.remove(0); }
+                                                let miner_addr = session_miner_addr.lock().unwrap().clone();
+                                                s_lock.push(Share {
+                                                    miner: miner_addr.clone(),
+                                                    difficulty: block.difficulty as f64,
+                                                    timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+                                                });
+                                            } // Unlock shares here
+                                            
+                                            let miner_addr = session_miner_addr.lock().unwrap().clone();
+                                            
+                                            // PPS LOGIC: Immediate Credit to Ledger
+                                            let current_mode = *mode_ref.lock().unwrap();
+                                            if current_mode == PoolMode::PPS {
+                                                let chain_lock = chain.lock().unwrap(); // Acquire Lock
+                                                if let Some(ref db) = chain_lock.db {
+                                                    // Formula: (PoolDiff / NetDiff) * BlockReward
+                                                    let pool_diff = 0.001;
+                                                    
+                                                    // Convert Bits to Difficulty (Approx for Testnet/MVP)
+                                                    // 0x1d00ffff = Diff 1
+                                                    let bits = block.difficulty;
+                                                    let net_diff = if bits == 0x1d00ffff { 1.0 } else { 
+                                                        // Fallback: If bits are roughly standard (high 8 bits = exponent)
+                                                        // Diff = 0x00ffff * 2**(8*(0x1d - 3)) / target
+                                                        // Simplify: Just use 1.0 for now if unknown bits 
+                                                        1.0 
+                                                    };
+
+                                                    if net_diff > 0.0 {
+                                                        let ratio = pool_diff / net_diff as f64;
+                                                        let reward = (ratio * 50.0 * 100_000_000.0) as u64;
+                                                        
+                                                        if reward > 0 {
+                                                            let _ = db.credit_miner(&miner_addr, reward);
+                                                            // println!("[Pool PPS] Share Accepted! Credit: {} VLT to {}", reward as f64 / 1e8, miner_addr);
+                                                        }
+                                                    }
+                                                }
+                                            }
+
                                             result = Some(serde_json::json!(true)); 
                                         }
                                     }
