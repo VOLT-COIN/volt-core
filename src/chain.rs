@@ -952,8 +952,8 @@ impl Blockchain {
 
          // 5. Verify Timestamp (Time Warp Protection)
          let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
-         if block.timestamp <= last.timestamp {
-             println!("[Security] Timestamp Invalid: Not Monotonic. Last: {}, New: {}", last.timestamp, block.timestamp);
+         if block.timestamp < last.timestamp {
+             println!("[Security] Timestamp Invalid: Time Reversal. Last: {}, New: {}", last.timestamp, block.timestamp);
              return false;
          }
          if block.timestamp > now + 7200 { // 2 Hours Drift
