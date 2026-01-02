@@ -303,7 +303,7 @@ fn handle_client(
                     match req.method.as_str() {
                         "mining.subscribe" => {
                             result = Some(serde_json::json!([
-                                [ ["mining.set_difficulty", "0.001"], ["mining.notify", "1"] ],
+                                [ ["mining.set_difficulty", "0.1"], ["mining.notify", "1"] ],
                                 "00000000", 4
                             ]));
                         },
@@ -312,7 +312,7 @@ fn handle_client(
                             *is_authorized.lock().unwrap() = true; // Use original Arc, not the moved clone
                             
                             // Send Initial Diff (Standard)
-                            let diff_notify = serde_json::json!({ "id": null, "method": "mining.set_difficulty", "params": [0.001] });
+                            let diff_notify = serde_json::json!({ "id": null, "method": "mining.set_difficulty", "params": [0.1] });
                             let _ = stream_writer_resp.write_all((serde_json::to_string(&diff_notify).unwrap() + "\n").as_bytes());
 
                             if let Some(user) = req.params.get(0).and_then(|v| v.as_str()) {
@@ -537,7 +537,7 @@ fn handle_client(
                                                 let chain_lock = chain.lock().unwrap(); // Acquire Lock
                                                 if let Some(ref db) = chain_lock.db {
                                                     // Formula: (PoolDiff / NetDiff) * BlockReward
-                                                    let pool_diff = 0.001;
+                                                    let pool_diff = 0.1;
                                                     
                                                     // Dynamic Reward (Halving Aware)
                                                     let current_height = chain_lock.chain.len() as u64;
