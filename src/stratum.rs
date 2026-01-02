@@ -1,4 +1,4 @@
-use std::net::{TcpListener, TcpStream};
+﻿use std::net::{TcpListener, TcpStream};
 use std::io::{BufRead, BufReader, Write};
 use std::thread;
 use std::sync::{Arc, Mutex};
@@ -346,13 +346,24 @@ fn handle_client(
                                             let r1 = hasher.finalize();
                                             let mut h2 = Sha256::new(); h2.update(r1);
                                             
-                                            // Update Header Merkle
-                                            block.merkle_root = hex::encode(h2.finalize().to_vec());
-                                            
                                             // Update Body (For Integrity Check)
                                             let mut tx = block.transactions[0].clone();
-                                            tx.script_sig = crate::script::Script::new().push(crate::script::OpCode::OpPush(coinbase_bytes));
+                                            let mut script_data = Vec::new();
+                                            script_data.extend_from_slice(&height_bytes);
+                                            script_data.extend_from_slice(&[0,0,0,0]); // extra1
+                                            if let Ok(ex2_bytes) = hex::decode(ex2) {
+                                                script_data.extend(ex2_bytes);
+                                            }
+                                            
+                                            // Update Tx
+                                            let mut tx = block.transactions[0].clone();
+                                            // Fix: Use builder pattern correctly (push consumes self)
+                                            tx.script_sig = crate::script::Script::new().push(crate::script::OpCode::OpPush(script_data));
                                             block.transactions[0] = tx;
+                                            
+                                            // Now recalculate root from transactions
+                                            block.merkle_root = crate::block::Block::calculate_merkle_root(&block.transactions);
+                                            
                                         }
 
                                         // 2. Update Header
