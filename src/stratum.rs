@@ -315,8 +315,11 @@ fn handle_client(
                             let diff_notify = serde_json::json!({ "id": null, "method": "mining.set_difficulty", "params": [0.1] });
                             let _ = stream_writer_resp.write_all((serde_json::to_string(&diff_notify).unwrap() + "\n").as_bytes());
 
-                            if let Some(user) = req.params.get(0).and_then(|v| v.as_str()) {
-                                *session_miner_addr.lock().unwrap() = user.to_string();
+                            if let Some(user_full) = req.params.get(0).and_then(|v| v.as_str()) {
+                                // Strip Worker Name (e.g. "Addr.Rig1" -> "Addr")
+                                let addr_part = user_full.split('.').next().unwrap_or(user_full);
+                                *session_miner_addr.lock().unwrap() = addr_part.to_string();
+                                println!("[Stratum] Authorized Miner: {} (Worker: {})", addr_part, user_full);
                             }
                             // Trigger immediate update by resetting height
                             *last_notified_height.lock().unwrap() = 0; 
