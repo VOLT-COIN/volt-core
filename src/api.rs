@@ -85,7 +85,7 @@ impl ApiServer {
 
         thread::spawn(move || {
             let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).expect("Failed to bind API port");
-            println!("[API] Server listening on 0.0.0.0:{} (v1.0.13-DEBUG-API - Public Access Enabled)", port);
+            println!("[API] Server listening on 0.0.0.0:{} (Public Access Enabled)", port);
 
             for stream in listener.incoming() {
                 match stream {

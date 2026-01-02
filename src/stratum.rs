@@ -38,6 +38,9 @@ struct Share {
     timestamp: u64,
 }
 
+// CONFIG: Pool Fee (0.0 = 0%, 0.02 = 2%)
+const POOL_FEE: f64 = 0.0; 
+
 pub struct StratumServer {
     blockchain: Arc<Mutex<Blockchain>>,
     port: u16,
@@ -86,7 +89,7 @@ impl StratumServer {
             let chain_payout = self.blockchain.clone();
             thread::spawn(move || {
                 loop {
-                    thread::sleep(std::time::Duration::from_secs(60)); // Check evey 1 min
+                    thread::sleep(std::time::Duration::from_secs(1800)); // Check every 30 mins
                     
                     println!("[Pool PPS] Processing Payouts...");
                     
@@ -121,7 +124,7 @@ impl StratumServer {
                                      
                                      for (miner, bal) in balances {
                                          let fee = 100_000;
-                                         if bal >= 100_000_000 && bal > fee { // Threshold: 1 VLT
+                                         if bal >= 10_000_000 && bal > fee { // Threshold: 0.1 VLT
                                              current_nonce += 1;
                                              let net_payout = bal - fee;
                                              let mut tx = crate::transaction::Transaction::new(
@@ -168,8 +171,8 @@ fn handle_client(
     mut mode_ref: Arc<Mutex<PoolMode>>,
     shares_ref: Arc<Mutex<Vec<Share>>>
 ) {
-    let _peer_addr = stream.peer_addr().unwrap_or(std::net::SocketAddr::from(([0,0,0,0], 0)));
-    // println!("[Stratum] Client connected: {}", peer_addr);
+    let peer_addr = stream.peer_addr().unwrap_or(std::net::SocketAddr::from(([0,0,0,0], 0)));
+    println!("[Stratum] Client connected: {}", peer_addr);
     
     let stream_reader = match stream.try_clone() {
         Ok(s) => s,
@@ -446,7 +449,10 @@ fn handle_client(
                                                                 let mut chain_lock = chain.lock().unwrap();
                                                                 
                                                                 // Calculate Reward (Fast)
-                                                                let total_reward = chain_lock.calculate_reward(current_height_val);
+                                                                let total_reward_gross = chain_lock.calculate_reward(current_height_val);
+                                                                let total_reward = (total_reward_gross as f64 * (1.0 - POOL_FEE)) as u64;
+                                                                println!("[Pool PPLNS] Block Reward: {} VLT (Fee: {}%) -> Distributing: {} VLT", 
+                                                                    total_reward_gross as f64 / 1e8, POOL_FEE * 100.0, total_reward as f64 / 1e8);
                                                                 
                                                                 // Calculate Nonce Base
                                                                 let mut current_nonce = *chain_lock.state.nonces.get(pool_addr).unwrap_or(&0);
@@ -549,11 +555,12 @@ fn handle_client(
 
                                                     if net_diff > 0.0 {
                                                         let ratio = pool_diff / net_diff as f64;
-                                                        let reward = (ratio * block_reward as f64) as u64;
+                                                        let gross_reward = (ratio * block_reward as f64) as u64;
+                                                        let net_reward = (gross_reward as f64 * (1.0 - POOL_FEE)) as u64;
                                                         
-                                                        if reward > 0 {
-                                                            let _ = db.credit_miner(&miner_addr, reward);
-                                                            println!("[Pool PPS] Share Accepted! Credit: {} VLT to {}", reward as f64 / 1e8, miner_addr);
+                                                        if net_reward > 0 {
+                                                            let _ = db.credit_miner(&miner_addr, net_reward);
+                                                            // println!("[Pool PPS] Share Accepted! Credit: {} VLT (Fee: {}%) to {}", net_reward as f64 / 1e8, POOL_FEE * 100.0, miner_addr);
                                                         }
                                                     }
                                                 }
