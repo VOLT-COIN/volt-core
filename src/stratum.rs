@@ -385,19 +385,29 @@ fn handle_client(
                                         if is_block {
                                             let miner_addr = session_miner_addr.lock().unwrap().clone();
                                             println!("[Pool] BLOCK FOUND by {}! Hash: {}", miner_addr, block.hash);
-                                            let mut chain_lock = chain.lock().unwrap();
-                                            let block_clone = block.clone(); // Clone for logic
-                                            
                                             // PPLNS LOGIC: Distribute Rewards
-                                            // Payout Logic Removed from here
+                                            
+                                            // 1. Submit Block (Critical Section)
+                                            let current_height_val = {
+                                                let mut chain_lock = chain.lock().unwrap();
+                                                let block_clone = block.clone();
+                                                
+                                                if chain_lock.submit_block(block_clone) {
+                                                    chain_lock.save();
+                                                    result = Some(serde_json::json!(true));
+                                                    chain_lock.chain.len() as u64
+                                                } else {
+                                                    0 // Failed
+                                                }
+                                            }; // LOCK RELEASED HERE? NO, explicitly drop or use scope.
+                                            
+                                            // We need to drop lock BEFORE PPLNS math, but we are inside `chain_lock` scope.
+                                            // Let's drop it explicitly.
+                                            // drop(chain_lock); // Not needed, scope handles it.
 
-
-                                            if chain_lock.submit_block(block_clone) {
-                                                chain_lock.save();
-                                                result = Some(serde_json::json!(true));
-
+                                            if current_height_val > 0 {
                                                 // ---------------------------------------------------------
-                                                // PPLNS PAYOUT LOGIC (Moved inside success block)
+                                                // PPLNS PAYOUT LOGIC (Unlocked Phase)
                                                 // ---------------------------------------------------------
                                                 let current_mode = *mode_ref.lock().unwrap();
                                                 if current_mode == PoolMode::PPLNS {
@@ -405,42 +415,38 @@ fn handle_client(
                                                     if total_valid_shares > 0 {
                                                         println!("[Pool PPLNS] Block Accepted! Distributing rewards via PPLNS to {} shares...", total_valid_shares);
                                                         
-                                                        // Pool Config
+                                                        // Pool Config (IO - Slow)
                                                         let pool_priv_key_hex = std::fs::read_to_string("pool_key.txt")
                                                             .unwrap_or_else(|_| "00".repeat(32)).trim().to_string();
 
                                                         // Load Key
                                                         if let Ok(key_bytes) = hex::decode(&pool_priv_key_hex) {
                                                             if let Ok(signing_key) = k256::ecdsa::SigningKey::from_slice(&key_bytes) {
-                                                                // Derive Address dynamically to ensure Signature Match
+                                                                // Address Derivation
                                                                 let verifying_key = signing_key.verifying_key();
-                                                                let pub_key_bytes = verifying_key.to_encoded_point(true); // Compressed (33 bytes)
+                                                                let pub_key_bytes = verifying_key.to_encoded_point(true);
                                                                 let pool_addr_dynamic = hex::encode(pub_key_bytes.as_bytes());
-                                                                let pool_addr = pool_addr_dynamic.as_str(); // Use reference to keep code compatible if possible, or string.
-                                                                // Wait, previous code used pool_addr as &str. 
-                                                                // Let's shadow the previous variable definition.
+                                                                let pool_addr = pool_addr_dynamic.as_str();
                                                                 
                                                                 println!("[Pool Config] Loaded Owner Address: {}", pool_addr_dynamic);
 
-
-                                                                // Dynamic Reward (Halving Aware)
-                                                                let current_height = chain_lock.chain.len() as u64;
-                                                                // Note: We just accepted a block, so chain length includes it.
-                                                                // The reward we are distributing IS for the block at `current_height - 1` (last block).
-                                                                // Actually, wait. `submit_block` appends to chain.
-                                                                // So `chain.len()` is now N. The block index is N-1.
-                                                                // calculate_reward takes height.
-                                                                let total_reward = chain_lock.calculate_reward(current_height);
-                                                                // println!("[Pool Debug] Height: {}, Reward: {}", current_height, total_reward);
-                                                                
-                                                                // Group by Miner
+                                                                // Group by Miner (CPU Bound)
                                                                 let mut miner_scores = std::collections::HashMap::new();
                                                                 let shares = shares_ref.lock().unwrap();
                                                                 for s in shares.iter() {
                                                                     *miner_scores.entry(s.miner.clone()).or_insert(0) += 1;
                                                                 }
+                                                                drop(shares); // Release shares early
+
+                                                                // ---------------------------------------------------------
+                                                                // PHASE 3: Transaction Creation & Push (Re-acquire Chain Lock)
+                                                                // ---------------------------------------------------------
+                                                                let mut chain_lock = chain.lock().unwrap();
                                                                 
-                                                                // 0. Base Nonce (Robust)
+                                                                // Calculate Reward (Fast)
+                                                                let total_reward = chain_lock.calculate_reward(current_height_val);
+                                                                
+                                                                // Calculate Nonce Base
                                                                 let mut current_nonce = *chain_lock.state.nonces.get(pool_addr).unwrap_or(&0);
                                                                 for tx in &chain_lock.pending_transactions {
                                                                     if tx.sender == pool_addr && tx.nonce > current_nonce {
@@ -448,28 +454,35 @@ fn handle_client(
                                                                     }
                                                                 }
                                                                 
-                                                                // Create Payouts
-                                                                for (m_addr, score) in miner_scores {
-                                                                    let share_amt = (total_reward * score) / total_valid_shares;
-                                                                    if share_amt > 1000 {
+                                                                // Generate Transactions
+                                                                for (miner, score) in miner_scores {
+                                                                    let share_ratio = score as f64 / total_valid_shares as f64;
+                                                                    let payout = (total_reward as f64 * share_ratio) as u64;
+                                                                    
+                                                                    if payout > 0 {
                                                                         current_nonce += 1;
-                                                                        let mut payout_tx = crate::transaction::Transaction::new(
-                                                                            pool_addr.to_string(), m_addr.clone(), share_amt, "VLT".to_string(), current_nonce
+                                                                        let mut tx = crate::transaction::Transaction::new(
+                                                                            pool_addr.to_string(), miner.clone(), payout, "VLT".to_string(), current_nonce
                                                                         );
-                                                                        payout_tx.sign(&signing_key);
-                                                                        println!("[Pool PPLNS] Payout: {} VLT to {} (Nonce: {})", share_amt as f64 / 1e8, m_addr, current_nonce);
-                                                                        chain_lock.pending_transactions.push(payout_tx);
+                                                                        tx.sign(&signing_key);
+                                                                        println!("[Pool PPLNS] Payout: {} VLT to {} (Nonce: {})", payout as f64 / 1e8, miner, current_nonce);
+                                                                        chain_lock.pending_transactions.push(tx);
                                                                     }
                                                                 }
+                                                                
+                                                                // Save Txs
+                                                                chain_lock.save();
+                                                                
+                                                                // Clear Shares
+                                                                shares_ref.lock().unwrap().clear();
                                                             }
                                                         }
-                                                        // Clear Shares ONLY after successful submission
-                                                        shares_ref.lock().unwrap().clear();
                                                     }
                                                 }
-                                                // ---------------------------------------------------------
-
-                                            } else {
+                                            }
+                                                                
+                                            // Handle Failure Case
+                                            if current_height_val == 0 {
                                                 result = Some(serde_json::json!(false));
                                             }
 
