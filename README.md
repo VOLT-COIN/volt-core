@@ -1,63 +1,55 @@
-# Volt Blockchain ⚡
+# Volt Blockchain (VLT)
 
-**Volt** is a high-performance Layer 1 Proof-of-Work blockchain built entirely in Rust. It is designed for speed, security, and decentralized mining.
+Volt is a next-generation, Rust-based Layer 1 blockchain designed for decentralized GPU/CPU mining. It features a unique SHA-256d implementation optimized for high throughput and security.
 
 ## 🚀 Features
 
-- **Built in Rust**: Safe, concurrent, and blazing fast.
-- **Algorithm**: SHA-256d (Double SHA-256) - True Bitcoin Standard.
-- **Max Supply**: 21,000,000 VLT.
-- **Asset Issuance**: Native support for creating custom tokens on-chain.
-- **Decentralized**: No pre-mine, fair launch, and community-driven.
-- **Cross-Platform**: Runs on Windows, Linux, and macOS.
+*   **Algorithm:** SHA-256d (Proof of Work)
+*   **Max Supply:** 21,000,000 VLT
+*   **Block Time:** 60 Seconds
+*   **Language:** Rust (Performance & Safety)
+*   **Network:** Peer-to-Peer (P2P)
+
+## 📦 Components
+
+This repository contains the full Volt ecosystem:
+1.  **`volt_core`**: The main blockchain node and miner.
+2.  **`volt_wallet`**: The graphical wallet for Windows/Linux.
+3.  **`web_deploy`**: The React-based block explorer and website.
+
+## 📥 Download
+
+Latest Release: [v1.0.6](https://github.com/eslamsheref5000/volt-core/releases/tag/v1.0.6)
+
 
 ## 🛠️ Build from Source
 
 ### Prerequisites
-You need to have **Rust** installed.
-```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-```
-
-### Building
-Clone the repository and build the release binary:
+*   Rust (latest stable)
+*   GCC Toolchain (for Windows resource links)
 
 ```bash
+# Clone the repository
 git clone https://github.com/eslamsheref5000/volt-core.git
-cd volt_core
-cargo build --release --bin volt_core
+cd volt-core
+
+# Build Node
+cd src
+cargo build --release
+
+# Build Wallet
+cd ../volt_wallet
+cargo build --release
 ```
 
-The binary will be located at `target/release/volt_core`.
+## ⛏️ Mining
 
-## 🏃 Running a Node
+Connect to the official **PPLNS** pool:
+`stratum+tcp://volt-core.zapto.org:3333`
 
-To start a full node and sync with the network:
+**Network Status:** [https://volt-core.vercel.app/status](https://volt-core.vercel.app/status)
 
-```bash
-./target/release/volt_core
-```
-
-### Manual Connection (Troubleshooting)
-If your nodes are on the same local network but can't find each other, connect manually using the Local IP:
-
-```bash
-# Example: Adding a peer manually
-./target/release/volt_core 6000 192.168.1.X:6000
-```
-*(Replace `192.168.1.X` with the IP of your running node)*
-
-### Configuration
-On first run, a `config.toml` and `wallet.key` will be generated.
-- **Port**: 6000 (P2P), 6001 (RPC)
-- **Mining**: Enabled by default (set `mining = false` in config to disable)
-
-## 🌐 Ecosystem
-- **Explorer**: [https://volt-core.vercel.app](https://volt-core.vercel.app)
-- **GitHub**: [https://github.com/eslamsheref5000/volt-core](https://github.com/eslamsheref5000/volt-core)
-
-## 🤝 Contributing
-Pull requests are welcome! For major changes, please open an issue first to discuss what you would like to change.
 
 ## 📄 License
-This project is licensed under the MIT License.
+
+MIT License
