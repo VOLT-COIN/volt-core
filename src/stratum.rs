@@ -77,6 +77,84 @@ impl StratumServer {
                 }
             }
         });
+
+        // -------------------------------------------------------------
+        // PPS PAYOUT PROCESSOR (Runs if Mode == PPS)
+        // -------------------------------------------------------------
+        let settings_mode = *self.pool_mode.lock().unwrap();
+        if settings_mode == PoolMode::PPS {
+            let chain_payout = self.blockchain.clone();
+            thread::spawn(move || {
+                loop {
+                    thread::sleep(std::time::Duration::from_secs(60)); // Check evey 1 min
+                    
+                    println!("[Pool PPS] Processing Payouts...");
+                    
+                    // 1. Load Pool Key
+                    let pool_priv_key_hex = std::fs::read_to_string("pool_key.txt")
+                         .unwrap_or_else(|_| "00".repeat(32)).trim().to_string();
+                    
+                    if let Ok(key_bytes) = hex::decode(&pool_priv_key_hex) {
+                        if let Ok(signing_key) = k256::ecdsa::SigningKey::from_slice(&key_bytes) {
+                             // Derive Addr
+                             let verifying_key = signing_key.verifying_key();
+                             let pub_key_bytes = verifying_key.to_encoded_point(true);
+                             let pool_addr_dynamic = hex::encode(pub_key_bytes.as_bytes());
+                             let pool_addr = pool_addr_dynamic.as_str();
+
+                             // 2. Lock Chain (Short duration)
+                             let mut txs_to_push = Vec::new();
+                             let mut updates = Vec::new(); // (Miner, NewBalance)
+                             
+                             {
+                                 let chain = chain_payout.lock().unwrap();
+                                 if let Some(ref db) = chain.db {
+                                     let balances = db.get_all_miner_balances();
+                                     
+                                     // Calculate Nonce Base
+                                     let mut current_nonce = *chain.state.nonces.get(pool_addr).unwrap_or(&0);
+                                     for tx in &chain.pending_transactions {
+                                         if tx.sender == pool_addr && tx.nonce > current_nonce {
+                                             current_nonce = tx.nonce;
+                                         }
+                                     }
+                                     
+                                     for (miner, bal) in balances {
+                                         if bal >= 100_000_000 { // Threshold: 1 VLT
+                                             current_nonce += 1;
+                                             let mut tx = crate::transaction::Transaction::new(
+                                                 pool_addr.to_string(), miner.clone(), bal, "VLT".to_string(), current_nonce
+                                             );
+                                             tx.sign(&signing_key);
+                                             txs_to_push.push(tx);
+                                             updates.push((miner, bal));
+                                         }
+                                     }
+                                 }
+                             } // Release Chain Lock
+
+                             // 3. Apply Updates (Push Txs & Debit Ledger)
+                             if !txs_to_push.is_empty() {
+                                 println!("[Pool PPS] Sending {} Payouts...", txs_to_push.len());
+                                 let mut chain = chain_payout.lock().unwrap();
+                                 
+                                 for tx in txs_to_push {
+                                     chain.pending_transactions.push(tx);
+                                 }
+                                 
+                                 // Debit DB
+                                 if let Some(ref db) = chain.db {
+                                     for (miner, waiting_bal) in updates {
+                                         let _ = db.debit_miner(&miner, waiting_bal);
+                                         println!("[Pool PPS] Paid {} VLT to {}", waiting_bal as f64 / 1e8, miner);
+                                     }
+                                 }
+                             }
+                        }
+                    }
+                }
+            });
+        }
     }
 }
 
@@ -426,7 +504,7 @@ fn handle_client(
                                                         
                                                         if reward > 0 {
                                                             let _ = db.credit_miner(&miner_addr, reward);
-                                                            // println!("[Pool PPS] Share Accepted! Credit: {} VLT to {}", reward as f64 / 1e8, miner_addr);
+                                                            println!("[Pool PPS] Share Accepted! Credit: {} VLT to {}", reward as f64 / 1e8, miner_addr);
                                                         }
                                                     }
                                                 }
