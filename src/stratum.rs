@@ -324,37 +324,37 @@ fn handle_client(
                                                             *miner_scores.entry(s.miner.clone()).or_insert(0) += 1;
                                                         }
                                                         
+                                                        // 0. Determine Base Nonce (State + Pending)
+                                                        let mut current_nonce = *chain_lock.state.nonces.get(pool_addr).unwrap_or(&0);
+                                                        
+                                                        // scan pending to find highest used nonce
+                                                        for tx in &chain_lock.pending_transactions {
+                                                            if tx.sender == pool_addr {
+                                                                if tx.nonce > current_nonce {
+                                                                    current_nonce = tx.nonce;
+                                                                }
+                                                            }
+                                                        }
+                                                        
                                                         // Create Tx for each miner
                                                         for (m_addr, score) in miner_scores {
                                                             let share_amt = (total_reward * score) / total_valid_shares;
                                                             if share_amt > 1000 { // Dust limit
+                                                                // Increment Nonce for THIS transaction
+                                                                current_nonce += 1;
+                                                                
                                                                 let mut payout_tx = crate::transaction::Transaction::new(
                                                                     pool_addr.to_string(),
                                                                     m_addr.clone(),
                                                                     share_amt,
                                                                     "VLT".to_string(),
-                                                                    0 // Nonce handling is tricky here, need atomic nonce from chain state
+                                                                    current_nonce
                                                                 );
-                                                                
-                                                                // Fetch Nonce (Hack: Just use random/time for now or 0? 
-                                                                // No, must be valid. We need chain state access.
-                                                                let nonce = *chain_lock.state.nonces.get(pool_addr).unwrap_or(&0) + 1;
-                                                                // Wait, if we send multiple, we need nonce+1, nonce+2...
-                                                                // But we don't track the "pending" count in this scope easily.
-                                                                // Simplify: For now, we assume 1 block = 1 payout batch.
-                                                                // We will let the miners claim it manually? No, user wants automatic.
-                                                                // We will use Timestamp as Nonce if protocol supported it (it doesn't).
-                                                                
-                                                                // For MVP PPLNS: We just print the calculation. 
-                                                                // "Real" implementation requires proper wallet management in the node.
-                                                                // But I will add the TX to pending list anyway, hoping nonce aligns (likely fails if multiple miners).
-                                                                
-                                                                payout_tx.nonce = nonce; 
                                                                 
                                                                 // Sign
                                                                 payout_tx.sign(&signing_key);
                                                                 
-                                                                println!("[Pool] Payout: {} VLT to {}", share_amt as f64 / 1e8, m_addr);
+                                                                println!("[Pool] Payout: {} VLT to {} (Nonce: {})", share_amt as f64 / 1e8, m_addr, current_nonce);
                                                                 
                                                                 // Inject
                                                                 chain_lock.pending_transactions.push(payout_tx);
