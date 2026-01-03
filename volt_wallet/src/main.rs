@@ -246,7 +246,7 @@ impl WalletApp {
         // Background Thread (Unchanged)
         // Background Thread
         thread::spawn(move || {
-            let mut client = RpcClient::new("volt-core.zapto.org:6001");
+            let mut client = RpcClient::new("127.0.0.1:6001");
             loop {
                 // 1. Requests
                 if let Ok(msg) = rx_bg.try_recv() {
@@ -427,7 +427,7 @@ impl WalletApp {
             issue_supply: String::new(),
             stake_amount: String::new(),
             settings_tab: SettingsTab::Connection,
-            node_url_input: "volt-core.zapto.org:6001".to_string(),
+            node_url_input: "127.0.0.1:6001".to_string(),
             rx: rx_gui,
             tx: tx_bg,
             last_heartbeat: Instant::now(),
