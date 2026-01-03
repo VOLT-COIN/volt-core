@@ -182,22 +182,26 @@ fn handle_request(
     match req.command.as_str() {
         // --- SENSITIVE COMMANDS (Protected) ---
         "get_address" | "get_mnemonic" | "generate_mnemonic" | "import_mnemonic" | "send_transaction" | "import_wallet" | "encrypt_wallet" | "unlock_wallet" | "lock_wallet" | "stake" | "unstake" | "place_order" | "cancel_order" => {
-            // Check IP
+            // 1. Check IP (Localhost is always trusted)
             let is_local = peer_addr.ip().is_loopback(); 
-            // Note: Docker/Proxies might mask IP, but raw TCP bind gives real peer IP usually.
-            // For Vercel, it comes from WAN IP.
             
-            if !is_local {
+            // 2. Check Password (Remote Auth)
+            let rpc_pass_file = std::fs::read_to_string("rpc_password.txt").unwrap_or_else(|_| "volt".to_string());
+            let server_pass = rpc_pass_file.trim();
+            let has_auth = req.password.as_deref() == Some(server_pass);
+
+            // Access Rule: Localhost OR Authenticated
+            if !is_local && !has_auth {
                 return ApiResponse { 
                     status: "error".to_string(), 
-                    message: "Access Denied: Local Command Only".to_string(), 
+                    message: "Access Denied: Auth Required (rpc_password.txt)".to_string(), 
                     data: None 
                 };
             }
         },
-        _ => {} // Allow others
+        _ => {} // Allow others (Read-Only)
     };
-
+    
     match req.command.as_str() {
         "get_status" => {
             let locked = *is_locked.lock().unwrap();
