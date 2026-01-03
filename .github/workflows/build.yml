@@ -1,0 +1,46 @@
+name: Build Volt Node & Wallet
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: x86_64-pc-windows-msvc
+        override: true
+
+    - name: Build Volt Core (Node)
+      run: cargo build --release --bin volt_core
+
+    - name: Build Volt Wallet (GUI)
+      # Attempt build, but continue on error if dependencies are missing (e.g. GTK/Qt if applicable)
+      # Assuming pure Rust or statically linked for now based on project availability
+      run: cargo build --release --bin volt_wallet
+      continue-on-error: true
+
+    - name: Prepare Artifacts
+      run: |
+        mkdir release
+        copy target/release/volt_core.exe release/
+        if (Test-Path target/release/volt_wallet.exe) { copy target/release/volt_wallet.exe release/ }
+        copy volt_installer.sh release/
+        copy README.txt release/
+
+    - name: Upload Build Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: volt-windows-binaries
+        path: release/
