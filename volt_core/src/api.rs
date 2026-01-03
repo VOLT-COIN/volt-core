@@ -84,8 +84,8 @@ impl ApiServer {
         let node = self.node.clone();
 
         thread::spawn(move || {
-            let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).expect("Failed to bind API port");
-            println!("[API] Server listening on 127.0.0.1:{} (Local Access Only - Secure)", port);
+            let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).expect("Failed to bind API port");
+            println!("[API] Server listening on 0.0.0.0:{} (Public Read-Only, Private Local-Admin)", port);
 
             for stream in listener.incoming() {
                 match stream {
@@ -97,6 +97,11 @@ impl ApiServer {
                         let lock_ref = is_locked.clone();
                         let node_ref = node.clone();
                         
+                        let peer_addr = match stream.peer_addr() {
+                            Ok(addr) => addr,
+                            Err(_) => std::net::SocketAddr::from(([127, 0, 0, 1], 0)), // Fallback (shouldn't happen)
+                        };
+
                         thread::spawn(move || {
                             let mut buffer = [0; 4096];
                             if let Ok(size) = stream.read(&mut buffer) {
@@ -129,7 +134,8 @@ impl ApiServer {
                                     mining_ref, 
                                     wallet_ref, 
                                     lock_ref,
-                                    node_ref
+                                    node_ref,
+                                    peer_addr 
                                 );
                                 let response_json = serde_json::to_string(&response).unwrap_or(String::from("{\"status\":\"error\",\"message\":\"JSON Serialization Failed\"}")) + "\n";
                                 
@@ -160,7 +166,8 @@ fn handle_request(
     mining_status: Arc<Mutex<bool>>,
     wallet: Arc<Mutex<Wallet>>,
     is_locked: Arc<Mutex<bool>>,
-    node: Arc<Node>
+    node: Arc<Node>,
+    peer_addr: std::net::SocketAddr
 ) -> ApiResponse {
     // Parse Request
     let req: ApiRequest = match serde_json::from_str(req_str) {
@@ -170,6 +177,25 @@ fn handle_request(
             message: "Invalid JSON".to_string(), 
             data: None 
         },
+    };
+
+    match req.command.as_str() {
+        // --- SENSITIVE COMMANDS (Protected) ---
+        "get_address" | "get_mnemonic" | "generate_mnemonic" | "import_mnemonic" | "send_transaction" | "import_wallet" | "encrypt_wallet" | "unlock_wallet" | "lock_wallet" | "stake" | "unstake" | "place_order" | "cancel_order" => {
+            // Check IP
+            let is_local = peer_addr.ip().is_loopback(); 
+            // Note: Docker/Proxies might mask IP, but raw TCP bind gives real peer IP usually.
+            // For Vercel, it comes from WAN IP.
+            
+            if !is_local {
+                return ApiResponse { 
+                    status: "error".to_string(), 
+                    message: "Access Denied: Local Command Only".to_string(), 
+                    data: None 
+                };
+            }
+        },
+        _ => {} // Allow others
     };
 
     match req.command.as_str() {
