@@ -1,0 +1,60 @@
+# ⚡ Volt Blockchain - Discord Welcome Messages
+
+Here are 3 options for your Discord server. You can use these for a welcome bot (like MEE6) or post them manually in the #announcements channel.
+
+---
+
+### Option 1: The "Hype" Welcome (Best for #general or #welcome)
+**Headline:** Welcome to the Future of Rust Mining! 🦀⚡
+
+**Body:**
+@everyone Welcome to the official **Volt Blockchain** community! 🌍
+
+We are building the most secure, high-performance Layer 1 blockchain, powered purely by **Rust**.
+No Pre-mine. No ICO. Just pure **Proof-of-Work (PoW)**. ⛏️
+
+**🚀 Getting Started:**
+1.  **Download Wallet & Node:** [Link]
+2.  **Start Mining:** Connect to `volt-core.zapto.org:3333`
+3.  **Check Stats:** <https://volt-core.vercel.app>
+
+**💬 Join the Conversation:**
+*   <#general> - Chat with the community
+*   <#mining> - Get help with your rig
+*   <#development> - See what we're building
+
+Let's build the future together! 🚀
+
+---
+
+### Option 2: The "Miner" Focus (Best for mining pools/groups)
+**Headline:** ⛏️ Miners, Start Your Engines!
+
+**Body:**
+Welcome to **Volt**! ⚡
+We are bringing profitable CPU & GPU mining back to the people.
+
+**🔹 Network Specs:**
+*   **Algo:** SHA-256d
+*   **Block Time:** 60 Seconds
+*   **Total Supply:** 21,000,000 VLT
+
+**🛠️ How to Mine:**
+Stratum: `stratum+tcp://volt-core.zapto.org:3333`
+User: `YOUR_WALLET_ADDRESS`
+Pass: `x`
+
+Need help setting up HiveOS or Windows miner? Ask in <#mining-support>!
+
+---
+
+### Option 3: Short & Clean (Best for Welcome Bots/DM)
+**Body:**
+Hi {user}! 👋 Welcome to the **Volt Blockchain** server.
+
+⚡ **Volt** is a next-gen Layer 1 chain built on Rust.
+📥 **Download:** <https://github.com/eslamsheref5000/volt-core>
+🌐 **Website:** <https://volt-core.vercel.app>
+
+Read the <#rules> and say hello in <#general>!
+Happy Mining! ⛏️

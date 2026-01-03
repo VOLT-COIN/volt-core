@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "volt_core",
+    "volt_wallet"
+]
+resolver = "2"

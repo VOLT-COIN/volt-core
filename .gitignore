@@ -1,0 +1,50 @@
+# Rust
+target/
+**/*.rs.bk
+debug/
+release/
+build/
+.cargo/
+
+# Database
+volt.db/
+*.db
+
+# Logs
+*.log
+logs/
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Secrets
+wallet.key
+*.pem
+
+# Dependencies & Build artifacts
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Ignored Components (Local Only)
+explorer/
+web_deploy/
+tools/
+Volt_App_Final/
+Volt_App_Stage/
+
+# Archives
+*.zip
+*.rar
+*.7z
+
+# Editor directories and files
+.vercel

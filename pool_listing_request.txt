@@ -1,0 +1,23 @@
+Hello, I would like to request listing for a new Layer 1 blockchain: Volt (VLT).
+
+**Coin Name:** Volt
+**Ticker:** VLT
+**Algo:** SHA-256d
+**Website:** https://volt-core.vercel.app
+**GitHub:** https://github.com/eslamsheref5000/volt-core
+**Explorer:** https://volt-core.vercel.app/explorer
+**Announcement:** [Link to your BitcoinTalk Post]
+**Discord:** [Link to your Discord]
+
+**Source Code (Node):**
+https://github.com/eslamsheref5000/volt-core
+
+**Daemon Connection Info:**
+P2P Port: 6000
+RPC Port: 6001
+
+It is a Rust-based chain (compatible with standard Bitcoin-like RPCs).
+Premine: 0%
+Reward: 50 VLT
+
+We are looking for a stable mining pool partner. Thank you!

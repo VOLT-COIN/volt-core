@@ -1,0 +1,31 @@
+If you don't want to edit manually, use an AI Video Generator.
+
+Recommended Tool: **invideo.io** (They have a free AI tool)
+
+**INSTRUCTIONS:**
+1. Go to InVideo AI.
+2. Select "YouTube Short" or "Script to Video".
+3. Copy and Paste the exact Prompt below into the box.
+
+---
+**COPY THIS PROMPT:**
+
+Create a high-energy, futuristic 60-second promo video for a new cryptocurrency called "Volt Blockchain".
+Theme: Cyberpunk, Dark Mode, Neon Blue Lightning.
+Voiceover: Deep, epic male voice.
+
+Script:
+"In a world of slow, insecure legacy chains... The future demands something better.
+Introducing VOLT. The first Layer 1 blockchain engineered entirely in Rust.
+Not just another token. A native coin. Pure Proof of Work. Zero pre-mine. 100% Fair.
+We eliminated the vulnerabilities of the past to build the foundation for the future.
+Secure assets. Smart contracts. Decentralized Mining. It starts today.
+Volt Blockchain. Powering the new decentralized web. Join the revolution at volt-core.zapto.org"
+
+Visuals:
+- Show fast scrolling code.
+- Show server racks glowing blue.
+- Show a 3D gold coin with a lightning bolt.
+- Show a digital wallet on a phone.
+- Text overlays should be big and bold: "SPEED", "SECURITY", "RUST", "FAIR LAUNCH".
+---

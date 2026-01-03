@@ -1,0 +1,71 @@
+Here are the suggested answers for the Coinbase Asset Listing Form:
+
+---
+
+**1. Project / Asset Name:**
+Volt
+
+**2. Asset Symbol / Ticker:**
+VLT
+
+**3. Project Description (Summary):**
+Volt is a high-performance Layer 1 Proof-of-Work blockchain built entirely in Rust. It eliminates the memory safety vulnerabilities of C++ legacy chains while delivering fast block times (60 seconds) and a secure decentralized network. Volt supports native asset issuance and is developing a specialized smart contract layer (VoltVM).
+
+**4. Website URL:**
+https://volt-core.vercel.app
+
+**5. Whitepaper URL:**
+(Use the GitHub README or BitcoinTalk for now as we don't have a PDF)
+https://github.com/eslamsheref5000/volt-core/blob/main/README.md
+
+**6. GitHub Repository:**
+https://github.com/eslamsheref5000/volt-core
+
+**7. Asset Type:**
+Native Layer 1 Blockchain (Coin)
+
+**8. Consensus Mechanism:**
+Proof of Work (PoW)
+
+**9. Hashing Algorithm:**
+SHA-256d (Double SHA-256)
+
+**10. Max Supply:**
+21,000,000 VLT
+
+**11. Circulating Supply:**
+(Approx) 50 VLT (Genesis Era)
+
+**12. Smart Contract Address:**
+N/A (This is a Layer 1 Blockchain, not an ERC-20 token)
+
+**13. Date of Launch / Genesis:**
+January 1, 2026 (or Current Date)
+
+**14. Contact Email:**
+(Enter your own email address)
+
+**15. Listing Justification:**
+Volt represents the next evolution of PoW chains, rewriting the standard Bitcoin implementation in safety-critical Rust. It is fair-launched with no ICO and community-driven.
+
+**16. Link to CoinMarketCap / CoinGecko:**
+N/A - New Launch (Day 1). We are in the process of submitting verification requests.
+
+**17. Project and Token Utility:**
+*   **Live Utility:** VLT is the native currency used for network consensus (Mining Rewards) and transaction fee payments. It enables peer-to-peer value transfer without intermediaries.
+*   **Roadmap Utility:** VLT will be used to deploy smart contracts (VoltVM) and pay for Asset Issuance fees (Tokenization Layer) starting Q2 2026.
+
+**18. US Market Availability:**
+Yes. Volt is a decentralized Layer 1 blockchain offering equal access globally. It is designed as a utility commodity (digital resource) similar to Bitcoin, with no ICO or centralized issuer.
+
+**19. Executives:**
+(Since this is a decentralized open-source project, you should state that.)
+*   **Name:** N/A (Decentralized Community Project)
+*   **Role:** Founder / Lead Developer (Pseudonymous or utilize your real name if preferred)
+*   **Links:** https://github.com/eslamsheref5000
+
+**20. Address of Incorporation:**
+N/A - Volt is a decentralized software protocol, not a corporation. It has no physical headquarters or legal entity.
+
+**21. Entity Issuing Assets:**
+None. The assets (VLT) are issued programmatically by the blockchain protocol through Proof-of-Work mining (Coinbase transactions). There is no central issuer or pre-mine.

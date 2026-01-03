@@ -1,0 +1,88 @@
+==============================================================================
+                           VOLT BLOCKCHAIN - PROMO SCRIPT
+==============================================================================
+TITLE:      The Future of PoW
+DURATION:   60 Seconds
+TONE:       Cinematic, High-Energy, Futuristic
+==============================================================================
+
+[00:00 - 00:10]  THE HOOK
+------------------------------------------------------------------------------
+VISUAL:
+  Black screen. A faint electric hum builds up.
+  Suddenly, a blue electric pulse ripples across the screen.
+  Thick, bold text slams onto the screen in sync with bass hits:
+  "SPEED." ... "SECURITY." ... "POWER."
+
+AUDIO (Voiceover):
+  "In a world of slow, insecure legacy chains...
+  The future demands something better."
+
+
+[00:10 - 00:20]  THE SOLUTION
+------------------------------------------------------------------------------
+VISUAL:
+  Fast-paced montage.
+  (1) Computer screen scrolling Rust code (Matrix style but blue/white).
+  (2) Server racks glowing in a dark room.
+  (3) Close up of a CPU fan spinning up.
+
+AUDIO (Voiceover):
+  "Introducing VOLT.
+  The first Layer 1 blockchain engineered entirely in Rust."
+
+
+[00:20 - 00:30]  THE PRODUCT
+------------------------------------------------------------------------------
+VISUAL:
+  A 3D metallic coin with the Volt Logo (Lightning Bolt) spins slowly.
+  Sparks fly off the edges.
+  Text overlays appear: "ZERO PRE-MINE" ... "FAIR LAUNCH".
+
+AUDIO (Voiceover):
+  "Not just another token. A native coin.
+  Pure Proof of Work. Zero pre-mine. 100% Fair."
+
+
+[00:30 - 00:45]  THE COMPARISON
+------------------------------------------------------------------------------
+VISUAL:
+  Split Screen Effect.
+  LEFT SIDE (Red Filter): "Legacy C++" - Glitching, slow loading bar.
+  RIGHT SIDE (Blue Filter): "Volt Rust" - Instant processing, smooth graphics.
+
+AUDIO (Voiceover):
+  "We eliminated the vulnerabilities of the past...
+  To build the foundation for the future."
+
+
+[00:45 - 00:55]  CALL TO ACTION
+------------------------------------------------------------------------------
+VISUAL:
+  High-energy cut to a Mining Rig (GPUs).
+  Cut to a Smartphone showing the Volt Wallet.
+  Text: "START MINING TODAY".
+
+AUDIO (Voiceover):
+  "Secure assets. Smart contracts. Decentralized Mining.
+  It starts today."
+
+
+[00:55 - 01:00]  OUTRO
+------------------------------------------------------------------------------
+VISUAL:
+  Volt Logo glowing on a black background.
+  Website address shines below it:
+  volt-core.vercel.app
+
+AUDIO (Voiceover):
+  "Volt Blockchain. Powering the new decentralized web.
+  Join the revolution."
+
+==============================================================================
+PRODUCTION GUIDE
+==============================================================================
+1. VOICE: Use ElevenLabs (Voice ID: 'Marcus' or 'Callum' - Deep/Epic).
+2. MUSIC: Search for "Cyberpunk Trailer Music" or "Epic Bass Drop".
+3. FOOTAGE: Use stock footage of servers, lightning, and 3D coins from Canva.
+==============================================================================
