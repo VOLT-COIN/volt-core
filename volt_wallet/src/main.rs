@@ -106,37 +106,6 @@ fn main() -> Result<(), eframe::Error> {
 // Chunk 4: Sidebar render
 
 
-fn spawn_daemon() -> Option<std::process::Child> {
-    // Check if node is already running? (Simple check: try connect or just spawn and let it fail binding port)
-    // Better: Spawn and detach.
-    // We assume volt_core.exe is in the same directory.
-    let path = "volt_core.exe";
-    if std::path::Path::new(path).exists() {
-        println!("Ref: Spawning volt_core daemon...");
-        // Windows: CreateNoWindow flag to hide console?
-        // Basic spawn for now.
-        #[cfg(target_os = "windows")]
-        {
-            use std::os::windows::process::CommandExt;
-            const CREATE_NO_WINDOW: u32 = 0x08000000;
-            std::process::Command::new(path)
-                .args(["6000"]) // Default args (No Mining)
-                .stdout(std::process::Stdio::null()) // Silence Output
-                .stderr(std::process::Stdio::null()) // Silence Errors
-                .creation_flags(CREATE_NO_WINDOW)
-                .spawn().ok()
-        }
-        #[cfg(not(target_os = "windows"))]
-        {
-             std::process::Command::new("./volt_core")
-                .args(["6000"])
-                .spawn().ok()
-        }
-    } else {
-        println!("Warning: volt_core.exe not found. Wallet running in remote mode?");
-        None
-    }
-}
 
 #[derive(PartialEq, Clone, Copy)]
 enum Tab {
@@ -1154,7 +1123,6 @@ impl eframe::App for WalletApp {
 // --- Daemon Management ---
 fn spawn_daemon() -> Option<std::process::Child> {
     use std::process::{Command, Stdio};
-    use std::path::Path;
     
     // 1. Locate Volt Core
     // Check current directory first
