@@ -36,8 +36,8 @@ jobs:
         mkdir release
         copy target/release/volt_core.exe release/
         if (Test-Path target/release/volt_wallet.exe) { copy target/release/volt_wallet.exe release/ }
-        copy volt_installer.sh release/
-        copy README.txt release/
+        if (Test-Path volt_installer.sh) { copy volt_installer.sh release/ }
+        if (Test-Path README.md) { copy README.md release/ }
 
     - name: Upload Build Artifacts
       uses: actions/upload-artifact@v4
