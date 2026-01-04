@@ -34,7 +34,7 @@ COPY --chown=appuser:appuser proxy.py /app/
 
 # Permissions
 RUN chmod +x /app/volt_core /app/run.sh && \
-    chown -R appuser:appuser /home/appuser
+    chown -R appuser:appuser /app /home/appuser
 
 # Switch to User
 USER appuser
