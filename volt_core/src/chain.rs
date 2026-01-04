@@ -126,20 +126,41 @@ impl ChainState {
         // 1. DEBIT
         if tx.sender != "SYSTEM" {
             // Determine what to debit
-            let (debit_token, debit_amount) = if tx.tx_type == TxType::IssueToken {
-                ("VLT", tx.fee) // Issue: Pay fee in VLT, do not debit supply
-            } else if tx.tx_type == TxType::Stake {
-                ("VLT", tx.amount + tx.fee)
-            } else {
-                (tx.token.as_str(), tx.amount + tx.fee) // Transfer: Debit amount + fee from asset
-            };
+            let fee_token = "VLT";
             
-            let current_bal = self.get_balance(&tx.sender, debit_token);
-            
-            if let Some(new_bal) = current_bal.checked_sub(debit_amount) {
-                self.set_balance(&tx.sender, debit_token, new_bal);
+            // 1. Debit Fee (Always VLT)
+            let current_fee_bal = self.get_balance(&tx.sender, fee_token);
+            if let Some(new_fee_bal) = current_fee_bal.checked_sub(tx.fee) {
+                self.set_balance(&tx.sender, fee_token, new_fee_bal);
             } else {
-                 // Debug: println!("Debit Failed: {} needs {} {}", tx.sender, debit_amount, debit_token);
+                 println!("Failed to debit fee for {}", tx.sender);
+            }
+
+            // 2. Debit Amount (Token)
+            if tx.tx_type == TxType::Transfer || tx.tx_type == TxType::Stake {
+                // For Stake, token is VLT, so we just deducted fee, now deduct amount.
+                // For Transfer, token could be anything.
+                let amount_token = &tx.token;
+                let current_amount_bal = self.get_balance(&tx.sender, amount_token);
+                
+                if let Some(new_amt_bal) = current_amount_bal.checked_sub(tx.amount) {
+                    self.set_balance(&tx.sender, amount_token, new_amt_bal);
+                } else {
+                     // println!("Failed to debit amount");
+                }
+            } else if tx.tx_type == TxType::AddLiquidity {
+                 // Handled in separate logic block below? 
+                 // Actually AddLiquidity logic calls set_balance manually.
+                 // We should ensure we don't double debit.
+                 // The original code handled AddLiquidity separately in `apply_transaction` later?
+                 // No, original code had `match tx.tx_type` later for logic, but DEBIT was upfront.
+                 // Let's look at original DEBIT block.
+                 // It had `else if tx.tx_type == TxType::AddLiquidity` logic? 
+                 // No, the snippet shows `TxType::IssueToken`, `Stake`, `Transfer`.
+                 // AddLiquidity was NOT in the initial debit block I viewed?
+                 // Checking lines 518 in previous view... yes, AddLiquidity logic does the debit itself:
+                 // "self.set_balance(sender, token_a, old_a - amount_a);"
+                 // So we should NOT debit amount here for AddLiquidity.
             }
             
             if tx.tx_type == TxType::Stake {
