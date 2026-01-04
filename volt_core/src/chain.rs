@@ -128,12 +128,23 @@ impl ChainState {
             // Determine what to debit
             let fee_token = "VLT";
             
-            // 1. Debit Fee (Always VLT)
-            let current_fee_bal = self.get_balance(&tx.sender, fee_token);
-            if let Some(new_fee_bal) = current_fee_bal.checked_sub(tx.fee) {
-                self.set_balance(&tx.sender, fee_token, new_fee_bal);
+            // 1. Debit Fee (Hybrid: Try VLT first, then Token)
+            let vlt_bal = self.get_balance(&tx.sender, "VLT");
+            let fee_paid_in_vlt = if vlt_bal >= tx.fee {
+                self.set_balance(&tx.sender, "VLT", vlt_bal - tx.fee);
+                true
             } else {
-                 println!("Failed to debit fee for {}", tx.sender);
+                false
+            };
+
+            if !fee_paid_in_vlt {
+                // Fallback: Try paying in the Asset itself (if not VLT)
+                let token_bal = self.get_balance(&tx.sender, &tx.token);
+                if tx.token != "VLT" && token_bal >= tx.fee {
+                     self.set_balance(&tx.sender, &tx.token, token_bal - tx.fee);
+                } else {
+                     println!("CRITICAL: Failed to debit fee for {} (No VLT or {} balance)", tx.sender, tx.token);
+                }
             }
 
             // 2. Debit Amount (Token)
