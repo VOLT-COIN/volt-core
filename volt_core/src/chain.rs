@@ -258,6 +258,22 @@ impl Blockchain {
     pub fn rebuild_state(&mut self) {
         self.state = ChainState::new();
         for block in &self.chain {
+            // Re-apply Mining Reward (Coinbase) for historical blocks
+            if !block.transactions.is_empty() {
+                let coinbase_tx = &block.transactions[0];
+                if coinbase_tx.sender == "SYSTEM" {
+                     let receiver = &coinbase_tx.receiver;
+                     let amount = coinbase_tx.amount;
+                     let token = &coinbase_tx.token;
+                     
+                     let current_bal = self.state.get_balance(receiver, token);
+                     // Allow unchecked add here as we assume history was valid when mined
+                     // Use saturating_add to be safe against overflow corruption in bad history
+                     let new_bal = current_bal.saturating_add(amount);
+                     self.state.set_balance(receiver, token, new_bal);
+                }
+            }
+
             for tx in &block.transactions {
                 // If a historical transaction fails, we log it but continue (assume DB valid)
                 // In production, this might indicate corruption.
