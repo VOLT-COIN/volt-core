@@ -1,0 +1,72 @@
+name: Build Volt Node & Wallet
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: x86_64-pc-windows-msvc
+        override: true
+
+    - name: Build Volt Core (Node)
+      run: cargo build --release --bin volt_core
+
+    - name: Build Volt Wallet (GUI)
+      # Attempt build, but continue on error if dependencies are missing (e.g. GTK/Qt if applicable)
+      # Assuming pure Rust or statically linked for now based on project availability
+      run: cargo build --release --bin volt_wallet
+      continue-on-error: true
+
+    - name: Prepare Artifacts
+      run: |
+        mkdir release
+        copy target/release/volt_core.exe release/
+        if (Test-Path target/release/volt_wallet.exe) { copy target/release/volt_wallet.exe release/ }
+        if (Test-Path volt_installer.sh) { copy volt_installer.sh release/ }
+        if (Test-Path README.md) { copy README.md release/ }
+
+    - name: Upload Build Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: volt-windows-binaries
+        path: release/
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install Dependencies
+      run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config libcurl4-openssl-dev libjansson-dev libgmp-dev cmake clang
+    - name: Build
+      run: cargo build --verbose --release
+    - name: Rename Linux Binary
+      run: mv target/release/volt_core target/release/volt_core_linux
+    - name: Upload Linux Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: volt-linux
+        path: target/release/volt_core_linux
+
+    - name: Update Release
+      uses: marvinpinto/action-automatic-releases@latest
+      with:
+        repo_token: "${{ secrets.GITHUB_TOKEN }}"
+        automatic_release_tag: "latest"
+        prerelease: false
+        title: "Latest Build"
+        files: |
+          target/release/volt_core_linux

@@ -1,0 +1,44 @@
+/target
+**/target/
+volt_core/target/
+volt_wallet/target/
+**/*.exe
+**/*.dll
+**/*.rlib
+**/*.rmeta
+**/*.o
+**/*.a
+**/*.png
+volt_wallet/assets/
+**/*.rs.bk
+*.pdb
+*.io
+*.lock
+.idea/
+.vscode/
+
+# Node specific
+node_modules/
+.next/
+out/
+build/
+dist/
+
+# User draft files
+*_draft.txt
+*.log
+wallet.key
+
+# Local Keys
+wallet.dat
+
+# Tools
+gcc_toolchain/
+wallet_app/
+*.exe
+*.dll
+*.zip
+
+# OS
+Thumbs.db
+.DS_Store
