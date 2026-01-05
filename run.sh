@@ -26,23 +26,43 @@ echo "Starting Volt Core..."
 VOLT_PID=$!
 echo "Volt Core started with PID $VOLT_PID"
 
-# 1.5 Start Public Tunnel (Serveo SSH)
-# No installation required using standard SSH client
-echo "Starting Serveo Tunnel..."
-# Redirect output to file to capture the URL
-rm -f /tmp/serveo.log
-nohup ssh -R 0:localhost:9861 serveo.net -o ServerAliveInterval=60 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null > /tmp/serveo.log 2>&1 &
-TUNNEL_PID=$!
-echo "Serveo PID: $TUNNEL_PID"
+# 1.5 Start Public Tunnel (Serveo -> Localhost.run Loop)
+echo "Starting Public Tunnel Strategy..."
+rm -f /tmp/tunnel.log
 
-# Monitor and output the log
+(
+    # Generates a random ID for the session
+    RAND_ID=$((1000 + RANDOM % 9999))
+    
+    while true; do
+        echo "Trying Serveo (Alias: voltpool-$RAND_ID)..."
+        # Try Serveo with a specific Alias
+        ssh -R "voltpool-$RAND_ID:80:localhost:9861" serveo.net \
+            -o ServerAliveInterval=60 \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            -o ExitOnForwardFailure=yes \
+            > /tmp/tunnel.log 2>&1
+        
+        echo "Serveo Failed/Exited. Switching to Localhost.run..."
+        # Backup: Localhost.run
+        ssh -R 80:localhost:9861 localhost.run \
+            -o ServerAliveInterval=60 \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            -o ExitOnForwardFailure=yes \
+            >> /tmp/tunnel.log 2>&1
+            
+        echo "Both Tunnels Failed. Sleeping 10s before retry..."
+        sleep 10
+    done
+) &
+
+# Monitor logs
 (
     sleep 5
-    echo "--- Serveo Log Start ---"
-    cat /tmp/serveo.log
-    echo "--- Serveo Log End ---"
-    # Keep showing new lines (Essential to see the URL if it arrives late)
-    tail -f /tmp/serveo.log &
+    echo "--- Public Tunnel Log ---"
+    tail -f /tmp/tunnel.log &
 ) &
 
 # 3. Monitor Loops)
