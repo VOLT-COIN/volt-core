@@ -3,7 +3,8 @@ FROM rust:1.83-bookworm as builder
 
 WORKDIR /usr/src/app
 # Force Cache Invalidation (Change value to force rebuild)
-ARG CACHE_BUST=3
+# Cache Bust Removed
+# ARG CACHE_BUST=3
 COPY . .
 
 # Build Release (This compiles YOUR updated node.rs)
