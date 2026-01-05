@@ -117,10 +117,9 @@ fn main() {
     });
 
     // 9. Launch Interface
-    // Auto-Connect to Cloud Node (Hardcoded for convenience)
+    // Auto-Connect to Cloud Node
     log("[Auto-Connect] Trying to connect to Cloud Node...", &logs);
-    node.connect_to_peer("bore.pub:51872".to_string()); // User Requested
-    node.connect_to_peer("bore.pub:51048".to_string()); // Potential P2P Port (from logs)
+    node.connect_to_peer("wss://voltcore-node.hf.space/p2p".to_string());
 
     // 9. Launch Interface (Console Only for now due to linker issues)
     log("Running in CONSOLE mode. Type commands (START_MINING, STOP_MINING, SEND...)", &logs);

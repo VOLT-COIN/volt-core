@@ -335,7 +335,9 @@ impl Node {
                                      }
                                  }
                              },
-                             Err(_) => {} // Silent fail for discovery
+                             Err(e) => {
+                                 println!("[Discovery] Failed to connect to {}: {}", peer, e);
+                             } 
                          }
                     } else {
                          if let Ok(mut stream) = TcpStream::connect(&peer) {
