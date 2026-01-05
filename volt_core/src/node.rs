@@ -294,6 +294,7 @@ impl Node {
             let bootstraps = vec![
                 "volt-core.zapto.org:6000",
                 "194.164.75.228:6000", // Fallback IP
+                "wss://voltcore-node.hf.space/p2p", // Cloud Node (Auto-Connect)
             ];
             
             for bs in bootstraps {
