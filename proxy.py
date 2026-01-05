@@ -6,9 +6,11 @@ import sys
 import time
 
 # CONFIG
-LOCAL_HOST = "127.0.0.1"
+# ⚠️ CHANGE THIS TO YOUR SPACE URL ⚠️
+SPACE_URL = "voltcore-node.hf.space" 
+REMOTE_WS = f"wss://{SPACE_URL}/mine"
+LOCAL_HOST = "0.0.0.0" # Listen on all interfaces (so ASIC can see it)
 LOCAL_PORT = 3333
-REMOTE_WS = "wss://voltcore-node.hf.space/stratum"
 
 def handle_client(client_socket):
     print(f"[*] New Miner Connected: {client_socket.getpeername()}")
