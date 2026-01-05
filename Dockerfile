@@ -1,9 +1,9 @@
 # Stage 1: Build from Source
-FROM rust:1.83-bullseye as builder
+FROM rust:1.83-bookworm as builder
 
 WORKDIR /usr/src/app
 # Force Cache Invalidation (Change value to force rebuild)
-ARG CACHE_BUST=2
+ARG CACHE_BUST=3
 COPY . .
 
 # Build Release (This compiles YOUR updated node.rs)
@@ -11,7 +11,7 @@ WORKDIR /usr/src/app/volt_core
 RUN cargo build --release
 
 # Stage 2: Runtime
-FROM debian:bullseye-slim
+FROM ubuntu:22.04
 
 # 1. Install Runtime Dependencies (Optimized)
 RUN apt-get update && apt-get install -y --no-install-recommends \
