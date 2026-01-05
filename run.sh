@@ -26,8 +26,21 @@ echo "Starting Volt Core..."
 VOLT_PID=$!
 echo "Volt Core started with PID $VOLT_PID"
 
-# Playit Disabled (Blacklisted)
-echo "Playit Support Disabled (HF Blacklist)."
+# 1.5 Start Public Tunnel (Serveo SSH)
+# No installation required using standard SSH client
+echo "Starting Serveo Tunnel..."
+# Auto-restart loop for the tunnel
+while true; do
+  ssh -R 0:localhost:9861 serveo.net -o ServerAliveInterval=60 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null 2>&1 | grep "Forwarding TCP" &
+  TUNNEL_PID=$!
+  sleep 10
+  if ps -p $TUNNEL_PID > /dev/null; then
+     echo "✅ Serveo Tunnel Active."
+     break
+  else
+     echo "⚠️ Serveo disconnected, retrying..."
+  fi
+done &
 
 # 3. Monitor Loops)
 wait $VOLT_PID
