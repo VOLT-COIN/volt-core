@@ -20,10 +20,17 @@ if [ $? -ne 0 ]; then
 fi
 
 # 1.5 Start Public Tunnel
-# Strategy: Playit (Permanent) > Pinggy (Temporary Backup)
-
-# Playit Removed per user request
-echo "Playit Support Disabled."
+# Strategy: Playit (Permanent)
+if [ -n "$PLAYIT_SECRET" ]; then
+    echo "Starting Playit.gg Tunnel (Permanent)..."
+    # Run Playit in background
+    playit --secret $PLAYIT_SECRET > /tmp/playit.log 2>&1 &
+    echo "--------------------------------------------------------"
+    echo "💎 PERMANENT MINING ON. Check Playit.gg Dashboard for Address!"
+    echo "--------------------------------------------------------"
+else
+    echo "WARNING: PLAYIT_SECRET not set. No Public TCP Tunnel started."
+fi
 
 # 2. Start Volt Core (With ALL PORTS)
 # Args: [API Port] [P2P Port] [Stratum Port] [Websocket Port] (Example from history)
