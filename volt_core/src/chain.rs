@@ -238,16 +238,22 @@ impl Blockchain {
         };
 
         if let Some(ref db) = blockchain.db {
-            if let Some(chain_data) = db.load_chain() {
-                blockchain.chain = chain_data;
-                // Restore Mempool
-                if let Ok(pending) = db.load_pending_txs() {
-                    blockchain.pending_transactions = pending;
-                    println!("[Chain] Restored {} pending transactions from DB", blockchain.pending_transactions.len());
+            match db.load_chain() {
+                Ok(chain_data) => {
+                    blockchain.chain = chain_data;
+                    // Restore Mempool
+                    if let Ok(pending) = db.load_pending_txs() {
+                        blockchain.pending_transactions = pending;
+                        println!("[Chain] Restored {} pending transactions from DB", blockchain.pending_transactions.len());
+                    }
+                    blockchain.rebuild_state();
+                },
+                Err(e) if e == "Empty" => {
+                    blockchain.create_genesis_block();
+                },
+                Err(e) => {
+                    panic!("CRITICAL: Failed to load blockchain database: {}. Fix the DB file or delete it to reset.", e);
                 }
-                blockchain.rebuild_state();
-            } else {
-                blockchain.create_genesis_block();
             }
         } else {
              blockchain.create_genesis_block();

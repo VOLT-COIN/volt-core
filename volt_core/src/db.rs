@@ -16,13 +16,18 @@ impl Database {
     }
 
     // Load entire chain for memory initialization
-    pub fn load_chain(&self) -> Option<Vec<Block>> {
-        if let Ok(mut blocks) = self.get_all_blocks() {
-            if blocks.is_empty() { return None; }
-            blocks.sort_by_key(|b| b.index); // Ensure order
-            Some(blocks)
-        } else {
-            None
+    // Load entire chain for memory initialization
+    pub fn load_chain(&self) -> Result<Vec<Block>, String> {
+        match self.get_all_blocks() {
+            Ok(mut blocks) => {
+                if blocks.is_empty() { 
+                    Err("Empty".to_string()) 
+                } else {
+                    blocks.sort_by_key(|b| b.index); // Ensure order
+                    Ok(blocks)
+                }
+            },
+            Err(e) => Err(format!("DB Failure: {}", e))
         }
     }
 
@@ -114,10 +119,11 @@ impl Database {
         let blocks = self.blocks()?;
         let mut result = Vec::new();
         for item in blocks.iter() {
-            if let Ok((_k, v)) = item {
-                let block: Block = serde_json::from_slice(&v).unwrap();
-                result.push(block);
-            }
+            // Propagate error if iteration fails
+            let (_, v) = item?;
+            // Propagate error if deserialization fails (data corruption)
+            let block: Block = serde_json::from_slice(&v).expect("DB Corruption: Failed to deserialize block");
+            result.push(block);
         }
         Ok(result)
     }
