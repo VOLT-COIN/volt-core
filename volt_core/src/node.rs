@@ -314,21 +314,45 @@ impl Node {
                 let known_peers = peers_ref.lock().unwrap().clone();
                 
                 for peer in known_peers {
-                    if let Ok(mut stream) = TcpStream::connect(&peer) {
-                        let msg = Message::GetPeers;
-                        let _ = stream.write_all(serde_json::to_string(&msg).unwrap_or_default().as_bytes());
-                        
-                        // Read response immediately
-                        let mut de = serde_json::Deserializer::from_reader(&stream);
-                        if let Ok(Message::Peers(new_list)) = Message::deserialize(&mut de) {
-                            let mut p_lock = peers_ref.lock().unwrap();
-                            for p in new_list {
-                                if !p_lock.contains(&p) {
-                                    println!("[Discovery] Found new peer: {}", p);
-                                    p_lock.push(p);
-                                }
-                            }
-                        }
+                    if peer.starts_with("ws://") || peer.starts_with("wss://") {
+                         match tungstenite::connect(&peer) {
+                             Ok((mut socket, _)) => {
+                                 let msg = Message::GetPeers;
+                                 let json = serde_json::to_string(&msg).unwrap_or_default();
+                                 if socket.write_message(tungstenite::Message::Text(json)).is_ok() {
+                                     if let Ok(msg) = socket.read_message() {
+                                          if let tungstenite::Message::Text(text) = msg {
+                                              if let Ok(Message::Peers(new_list)) = serde_json::from_str(&text) {
+                                                  let mut p_lock = peers_ref.lock().unwrap();
+                                                  for p in new_list {
+                                                      if !p_lock.contains(&p) {
+                                                          println!("[Discovery] Found new peer: {}", p);
+                                                          p_lock.push(p);
+                                                      }
+                                                  }
+                                              }
+                                          }
+                                     }
+                                 }
+                             },
+                             Err(_) => {} // Silent fail for discovery
+                         }
+                    } else {
+                         if let Ok(mut stream) = TcpStream::connect(&peer) {
+                             let msg = Message::GetPeers;
+                             let _ = stream.write_all(serde_json::to_string(&msg).unwrap_or_default().as_bytes());
+                             
+                             let mut de = serde_json::Deserializer::from_reader(&stream);
+                             if let Ok(Message::Peers(new_list)) = Message::deserialize(&mut de) {
+                                 let mut p_lock = peers_ref.lock().unwrap();
+                                 for p in new_list {
+                                     if !p_lock.contains(&p) {
+                                         println!("[Discovery] Found new peer: {}", p);
+                                         p_lock.push(p);
+                                     }
+                                 }
+                             }
+                         }
                     }
                 }
                 
