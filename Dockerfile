@@ -57,6 +57,7 @@ ENV HOME=/home/appuser
 EXPOSE 7860
 
 # 8. Start the Application
-CMD ["bash", "/home/appuser/app/run.sh"]
+# Run script, then sleep forever to keep container alive for logs
+CMD ["bash", "-c", "/home/appuser/app/run.sh; echo '❌ Script finished/crashed. Keeping container alive...'; sleep infinity"]
 
 
