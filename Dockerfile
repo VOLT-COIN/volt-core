@@ -1,5 +1,5 @@
 # Stage 1: Build from Source
-FROM rust:1.83-bookworm as builder
+FROM rustlang/rust:nightly as builder
 
 WORKDIR /usr/src/app
 # Force Cache Invalidation (Change value to force rebuild)

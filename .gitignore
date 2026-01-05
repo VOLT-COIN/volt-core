@@ -13,7 +13,7 @@ volt_wallet/assets/
 **/*.rs.bk
 *.pdb
 *.io
-*.lock
+# *.lock (Removed)
 .idea/
 .vscode/
 
