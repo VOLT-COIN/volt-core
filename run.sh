@@ -29,18 +29,21 @@ echo "Volt Core started with PID $VOLT_PID"
 # 1.5 Start Public Tunnel (Serveo SSH)
 # No installation required using standard SSH client
 echo "Starting Serveo Tunnel..."
-# Auto-restart loop for the tunnel
-while true; do
-  ssh -R 0:localhost:9861 serveo.net -o ServerAliveInterval=60 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null 2>&1 | grep "Forwarding TCP" &
-  TUNNEL_PID=$!
-  sleep 10
-  if ps -p $TUNNEL_PID > /dev/null; then
-     echo "✅ Serveo Tunnel Active."
-     break
-  else
-     echo "⚠️ Serveo disconnected, retrying..."
-  fi
-done &
+# Redirect output to file to capture the URL
+rm -f /tmp/serveo.log
+nohup ssh -R 0:localhost:9861 serveo.net -o ServerAliveInterval=60 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null > /tmp/serveo.log 2>&1 &
+TUNNEL_PID=$!
+echo "Serveo PID: $TUNNEL_PID"
+
+# Monitor and output the log
+(
+    sleep 5
+    echo "--- Serveo Log Start ---"
+    cat /tmp/serveo.log
+    echo "--- Serveo Log End ---"
+    # Keep showing new lines (Essential to see the URL if it arrives late)
+    tail -f /tmp/serveo.log &
+) &
 
 # 3. Monitor Loops)
 wait $VOLT_PID
