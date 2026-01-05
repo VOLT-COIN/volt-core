@@ -36,7 +36,7 @@ RUN useradd -m -u 1000 appuser
 WORKDIR /home/appuser/app
 
 # 3. Copy Compile Binary from Builder Stage
-COPY --from=builder /usr/src/app/volt_core/target/release/volt_core /home/appuser/app/volt_core
+COPY --from=builder /usr/src/app/target/release/volt_core /home/appuser/app/volt_core
 
 # 4. Copy Scripts & Configs
 # Assuming files are at the Container Context Root (Uploaded flat)
