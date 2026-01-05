@@ -29,10 +29,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 
 # Install Bore (TCP Tunnel)
-RUN wget -O /usr/local/bin/bore https://github.com/ekzhang/bore/releases/download/v0.5.2/bore-v0.5.2-x86_64-unknown-linux-musl.tar.gz \
-    && tar -xzf /usr/local/bin/bore -C /usr/local/bin/ \
-    && rm /usr/local/bin/bore \
-    && mv /usr/local/bin/bore-v0.5.2-x86_64-unknown-linux-musl /usr/local/bin/bore \
+RUN wget -O /tmp/bore.tar.gz https://github.com/ekzhang/bore/releases/download/v0.5.2/bore-v0.5.2-x86_64-unknown-linux-musl.tar.gz \
+    && tar -xzf /tmp/bore.tar.gz -C /usr/local/bin/ \
+    && rm /tmp/bore.tar.gz \
     && chmod +x /usr/local/bin/bore
 
 # 2. Setup User
