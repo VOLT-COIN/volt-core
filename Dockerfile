@@ -54,12 +54,11 @@ RUN chown -R appuser:appuser /home/appuser && \
 USER appuser
 ENV HOME=/home/appuser
 
-# 7. Healthcheck (JSON Format)
-HEALTHCHECK --interval=3m --timeout=10s \
-    CMD ["curl", "-f", "http://localhost:7860/mine"]
+# 7. Expose Port
+EXPOSE 7860
 
-# 8. Start the Application (Safe-Fail Mode)
-# Tries to run the script. If it fails (missing, permission, syntax), it sleeps so logs are visible.
-CMD ["sh", "-c", "bash /home/appuser/app/run.sh || (echo '❌ CMD FAILED - Container keeping alive for debug'; sleep 3600)"]
+# 8. Start the Application (Invincible Mode)
+# Run the script. If it crashes, finishes, or explodes -> Sleep Infinity to allow debugging.
+CMD ["bash", "-c", "/home/appuser/app/run.sh; echo 'Script exited. Keeping container alive...'; sleep infinity"]
 
 
