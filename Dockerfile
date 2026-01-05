@@ -50,14 +50,16 @@ RUN chown -R appuser:appuser /home/appuser && \
     sed -i 's/\r$//' /home/appuser/app/run.sh && \
     chmod +x /home/appuser/app/run.sh /home/appuser/app/volt_core
 
-# 6. Switch to User
-USER appuser
-ENV HOME=/home/appuser
+# 6. Switch to User (Temporarily Disabled for Debugging)
+# USER appuser
+# ENV HOME=/home/appuser
+USER root
 
 # 7. Expose Port
 EXPOSE 7860
 
-# 8. Start the Application (Sleep Test)
-CMD ["sleep", "infinity"]
+# 8. Start the Application (Heartbeat Mode)
+# Force container to stay alive printing logs
+CMD ["sh", "-c", "while true; do date; echo 'Container is Alive'; sleep 10; done"]
 
 
