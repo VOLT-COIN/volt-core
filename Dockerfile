@@ -28,8 +28,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 
-# Playit Removed (Blacklisted by HF)
-# RUN wget ...
+# Install Bore (TCP Tunnel)
+RUN wget -O /usr/local/bin/bore https://github.com/ekzhang/bore/releases/download/v0.5.2/bore-v0.5.2-x86_64-unknown-linux-musl.tar.gz \
+    && tar -xzf /usr/local/bin/bore -C /usr/local/bin/ \
+    && rm /usr/local/bin/bore \
+    && mv /usr/local/bin/bore-v0.5.2-x86_64-unknown-linux-musl /usr/local/bin/bore \
+    && chmod +x /usr/local/bin/bore
 
 # 2. Setup User
 RUN useradd -m -u 1000 appuser

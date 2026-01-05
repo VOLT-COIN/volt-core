@@ -26,37 +26,14 @@ echo "Starting Volt Core..."
 VOLT_PID=$!
 echo "Volt Core started with PID $VOLT_PID"
 
-# 1.5 Start Public Tunnel (Serveo -> Localhost.run Loop)
-echo "Starting Public Tunnel Strategy..."
+# 1.5 Start Public Tunnel (Bore - TCP)
+echo "Starting Bore Tunnel..."
 rm -f /tmp/tunnel.log
 
-(
-    # Generates a random ID for the session
-    RAND_ID=$((1000 + RANDOM % 9999))
-    
-    while true; do
-        echo "Trying Serveo (Alias: voltpool-$RAND_ID)..."
-        # Try Serveo with a specific Alias
-        ssh -R "voltpool-$RAND_ID:80:localhost:9861" serveo.net \
-            -o ServerAliveInterval=60 \
-            -o StrictHostKeyChecking=no \
-            -o UserKnownHostsFile=/dev/null \
-            -o ExitOnForwardFailure=yes \
-            > /tmp/tunnel.log 2>&1
-        
-        echo "Serveo Failed/Exited. Switching to Localhost.run..."
-        # Backup: Localhost.run
-        ssh -R 80:localhost:9861 localhost.run \
-            -o ServerAliveInterval=60 \
-            -o StrictHostKeyChecking=no \
-            -o UserKnownHostsFile=/dev/null \
-            -o ExitOnForwardFailure=yes \
-            >> /tmp/tunnel.log 2>&1
-            
-        echo "Both Tunnels Failed. Sleeping 10s before retry..."
-        sleep 10
-    done
-) &
+# Run Bore (Forward Local 9861 -> Public TCP)
+nohup bore local 9861 --to bore.pub > /tmp/tunnel.log 2>&1 &
+TUNNEL_PID=$!
+echo "Bore PID: $TUNNEL_PID"
 
 # Monitor logs
 (
