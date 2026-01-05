@@ -22,19 +22,8 @@ fi
 # 1.5 Start Public Tunnel
 # Strategy: Playit (Permanent) > Pinggy (Temporary Backup)
 
-if [ -n "$PLAYIT_SECRET" ]; then
-    echo "Starting Playit.gg Tunnel (Permanent)..."
-    # Playit connects using secret. User must configure forwarding map on website.
-    # playit --secret $PLAYIT_SECRET > /tmp/playit.log 2>&1 &
-    echo "⚠️ DEBUG: Playit execution temporarily DISABLED to test stability."
-    sleep 5
-    echo "--------------------------------------------------------"
-    echo "💎 PERMANENT MINING ON. Check Playit.gg Dashboard for Address!"
-    echo "--------------------------------------------------------"
-else
-    echo "WARNING: PLAYIT_SECRET not set. No Public TCP Tunnel started."
-    echo "To enable ASIC mining, set PLAYIT_SECRET in Space Settings."
-fi
+# Playit Removed per user request
+echo "Playit Support Disabled."
 
 # 2. Start Volt Core
 # Start on 7861 to avoid conflict with Nginx (on 7860)

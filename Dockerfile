@@ -27,9 +27,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 
-# Install Playit (Static Version v0.16.5)
-RUN wget -O /usr/local/bin/playit https://github.com/playit-cloud/playit-agent/releases/download/v0.16.5/playit-linux-amd64 \
-    && chmod +x /usr/local/bin/playit
+# Playit Removed
+# RUN wget ...
 
 # 2. Setup User
 RUN useradd -m -u 1000 appuser
@@ -50,16 +49,14 @@ RUN chown -R appuser:appuser /home/appuser && \
     sed -i 's/\r$//' /home/appuser/app/run.sh && \
     chmod +x /home/appuser/app/run.sh /home/appuser/app/volt_core
 
-# 6. Switch to User (Temporarily Disabled for Debugging)
-# USER appuser
-# ENV HOME=/home/appuser
-USER root
+# 6. Switch to User
+USER appuser
+ENV HOME=/home/appuser
 
 # 7. Expose Port
 EXPOSE 7860
 
-# 8. Start the Application (Heartbeat Mode)
-# Force container to stay alive printing logs
-CMD ["sh", "-c", "while true; do date; echo 'Container is Alive'; sleep 10; done"]
+# 8. Start the Application
+CMD ["bash", "/home/appuser/app/run.sh"]
 
 
