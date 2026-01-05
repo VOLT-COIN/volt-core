@@ -19,26 +19,27 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# 1.5 Start Public Tunnel
-# Strategy: Playit (Permanent)
-if [ -n "$PLAYIT_SECRET" ]; then
-    echo "Starting Playit.gg Tunnel (Permanent)..."
-    # Run Playit in background
-    playit --secret $PLAYIT_SECRET > /tmp/playit.log 2>&1 &
-    echo "--------------------------------------------------------"
-    echo "💎 PERMANENT MINING ON. Check Playit.gg Dashboard for Address!"
-    echo "--------------------------------------------------------"
-else
-    echo "WARNING: PLAYIT_SECRET not set. No Public TCP Tunnel started."
-fi
-
-# 2. Start Volt Core (With ALL PORTS)
-# Args: [API Port] [P2P Port] [Stratum Port] [Websocket Port] (Example from history)
-# Based on history: 7861 (API?), 7862 (P2P?), 9861 (Stratum), 7863 (Extra?)
+# 2. Start Volt Core FIRST (Priority)
+# Args: [API Port] [P2P Port] [Stratum Port] [Websocket Port]
 echo "Starting Volt Core..."
 /home/appuser/app/volt_core 7861 7862 9861 7863 &
 VOLT_PID=$!
 echo "Volt Core started with PID $VOLT_PID"
+
+# 3. Start Playit (Delayed & Isolated)
+if [ -n "$PLAYIT_SECRET" ]; then
+    echo "Starting Playit (Deferred)..."
+    (
+        sleep 10
+        echo "Launching Playit Tunnel..."
+        mkdir -p /tmp/playit
+        cd /tmp/playit
+        nohup playit --secret $PLAYIT_SECRET > /tmp/playit.log 2>&1 &
+        echo "Playit Launched."
+    ) &
+else
+    echo "Playit Secret not set. Skipping."
+fi
 
 # 3. Monitor Loops)
 wait $VOLT_PID
