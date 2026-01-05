@@ -28,9 +28,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 
-# Install Playit (Static Version v0.16.5)
-RUN wget -O /usr/local/bin/playit https://github.com/playit-cloud/playit-agent/releases/download/v0.16.5/playit-linux-amd64 \
-    && chmod +x /usr/local/bin/playit
+# Playit Removed (Blacklisted by HF)
+# RUN wget ...
 
 # 2. Setup User
 RUN useradd -m -u 1000 appuser

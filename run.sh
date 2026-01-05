@@ -26,20 +26,8 @@ echo "Starting Volt Core..."
 VOLT_PID=$!
 echo "Volt Core started with PID $VOLT_PID"
 
-# 3. Start Playit (Delayed & Isolated)
-if [ -n "$PLAYIT_SECRET" ]; then
-    echo "Starting Playit (Deferred)..."
-    (
-        sleep 10
-        echo "Launching Playit Tunnel..."
-        mkdir -p /tmp/playit
-        cd /tmp/playit
-        nohup playit --secret $PLAYIT_SECRET > /tmp/playit.log 2>&1 &
-        echo "Playit Launched."
-    ) &
-else
-    echo "Playit Secret not set. Skipping."
-fi
+# Playit Disabled (Blacklisted)
+echo "Playit Support Disabled (HF Blacklist)."
 
 # 3. Monitor Loops)
 wait $VOLT_PID
