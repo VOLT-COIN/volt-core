@@ -57,8 +57,7 @@ ENV HOME=/home/appuser
 # 7. Expose Port
 EXPOSE 7860
 
-# 8. Start the Application (Invincible Mode)
-# Run the script. If it crashes, finishes, or explodes -> Sleep Infinity to allow debugging.
-CMD ["bash", "-c", "/home/appuser/app/run.sh; echo 'Script exited. Keeping container alive...'; sleep infinity"]
+# 8. Start the Application (Sleep Test)
+CMD ["sleep", "infinity"]
 
 
