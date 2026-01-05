@@ -97,7 +97,7 @@
             log("Connecting to Pool...");
             // Detect protocol (wss for https, ws for http)
             const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-            const url = `${proto}://${window.location.host}/stratum`;
+            const url = `${proto}://${window.location.host}/mine`;
 
             socket = new WebSocket(url);
 
