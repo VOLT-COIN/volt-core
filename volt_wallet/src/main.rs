@@ -215,7 +215,7 @@ impl WalletApp {
         // Background Thread (Unchanged)
         // Background Thread
         thread::spawn(move || {
-            let mut client = RpcClient::new("127.0.0.1:6001");
+            let mut client = RpcClient::new("127.0.0.1:7862");
             loop {
                 // 1. Requests
                 if let Ok(msg) = rx_bg.try_recv() {
@@ -396,7 +396,7 @@ impl WalletApp {
             issue_supply: String::new(),
             stake_amount: String::new(),
             settings_tab: SettingsTab::Connection,
-            node_url_input: "127.0.0.1:6001".to_string(),
+            node_url_input: "127.0.0.1:7862".to_string(),
             rx: rx_gui,
             tx: tx_bg,
             last_heartbeat: Instant::now(),
@@ -755,7 +755,7 @@ impl eframe::App for WalletApp {
                                 let amt = self.send_amount.parse::<f64>().unwrap_or(0.0);
                                 let atomic_amount = (amt * 100_000_000.0) as u64;
                                 
-                                let node_url = "http://127.0.0.1:6001"; // Default to Local Node
+                                let node_url = "http://127.0.0.1:7862"; // Default to Local Node
                                 let base_fee = atomic_amount / 1000; // 0.1%
                                 let congestion_surcharge = self.pending_txs * 100_000_000; // 1 VLT per tx
                                 let calc_fee = base_fee + congestion_surcharge;
