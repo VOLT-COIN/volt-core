@@ -1544,74 +1544,6 @@ impl Blockchain {
           
           true
     }
-             let prev = &candidate[i-1];
-             
-             // Linkage
-             if cur.previous_hash != prev.hash || cur.index != prev.index + 1 { 
-                 println!("[Consensus] Rejecting: Broken Link at #{}", cur.index);
-                 return false; 
-             }
-             
-             // Hash Integrity
-             if cur.hash != cur.calculate_hash() { 
-                 println!("[Consensus] Rejecting: Invalid Hash at #{}", cur.index);
-                 return false; 
-             }
-             
-             // PoW Check (Simplified for MVP: Check formatting)
-             // PoW Check (Strict Mode)
-             let mut required_diff = 4; // Default
-             
-             // Handle Bits vs Legacy Diff logic (Copied from submit_block)
-             if cur.difficulty >= 0x1d00ffff {
-                 if cur.difficulty >= 0x207fffff {
-                     required_diff = 0;
-                 } else if cur.difficulty >= 0x1f00ffff {
-                     required_diff = 1;
-                 } else {
-                     required_diff = 4;
-                 }
-             } else {
-                 // Legacy
-                 // Note: We don't have stake-bonus context here easily without state,
-                 // but for sync we enforce BASE difficulty at minimum.
-                 // Ideally we should validate stake bonus too, but that requires
-                 // rebuilding state block-by-block. 
-                 // For MVP Sync: Enforce 4 zeros if legacy.
-                 required_diff = 4;
-             }
-
-             let target_prefix = "0".repeat(required_diff as usize);
-             if !cur.hash.starts_with(&target_prefix) {
-                  println!("[Consensus] Rejecting: Invalid PoW at #{}. Hash: {}, Target Prefix Len: {}", cur.index, cur.hash, required_diff);
-                  return false;
-             }
-             
-             // Signature Check
-             for (t_i, tx) in cur.transactions.iter().enumerate() {
-                 if t_i > 0 && !tx.verify() {
-                     println!("[Consensus] Rejecting: Invalid Tx Signature at #{}", cur.index);
-                     return false;
-                 }
-             }
-         }
-         
-         println!("[Consensus] Remote chain accepted. Verifying State Transitions...");
-         
-         match Blockchain::verify_chain_state(&candidate) {
-             Ok(new_state) => {
-                 self.chain = candidate;
-                 self.state = new_state;
-                 // Persist
-                 let _ = self.save();
-                 true
-             },
-             Err(e) => {
-                 println!("[Consensus] State Verification Failed: {}", e);
-                 false
-             }
-         }
-    }
 
     // Optimized Sync: Handle Sequence of Blocks without full chain replacement
     pub fn handle_sync_chunk(&mut self, chunk: Vec<Block>) -> bool {
@@ -1627,18 +1559,5 @@ impl Blockchain {
              println!("[Sync] Successfully added {} blocks from chunk.", added);
         }
         true
-    }                 self.state = new_state;
-                 println!("[Consensus] Chain Replaced and State Rebuilt Successfully.");
-             },
-             Err(e) => {
-                 println!("[Consensus] Rejecting: Chain Logic/State Error: {}", e);
-                 return false;
-             }
-         }
-         // Save to DB
-         if let Some(ref db) = self.db {
-             let _ = db.save_chain(&self.chain);
-         }
-         true
     }
 }
