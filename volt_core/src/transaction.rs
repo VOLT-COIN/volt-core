@@ -22,6 +22,12 @@ pub enum TxType {
     BurnNFT
 }
 
+impl std::fmt::Display for TxType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
 fn default_tx_type() -> TxType { TxType::Transfer }
 fn default_token() -> String { "VLT".to_string() }
 fn default_script() -> Script { Script::new() }

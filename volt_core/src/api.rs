@@ -619,9 +619,9 @@ fn handle_request(
                      // But we want to FORCE lock to ensure user knows password.
                      *wallet_lock = Wallet::new(); // Reloads as locked (since .enc exists now)
                      
-                     ApiResponse { status: "success".to_string(), message: "Wallet Encrypted & Locked".to_string(), data: None }
+                     return ApiResponse { status: "success".to_string(), message: "Wallet Encrypted & Locked".to_string(), data: None };
                 } else {
-                     ApiResponse { status: "error".to_string(), message: "Encryption Failed".to_string(), data: None }
+                     return ApiResponse { status: "error".to_string(), message: "Encryption Failed".to_string(), data: None };
                 }
                 
                 // Clear memory
@@ -781,13 +781,12 @@ fn handle_request(
              let chain = blockchain.lock().unwrap();
              let mut block = None;
 
+
              if let Some(h) = req.hash {
                  let target = h.to_lowercase();
-                 block = chain.chain.iter().find(|b| b.hash.to_lowercase() == target);
+                 block = chain.get_all_blocks().into_iter().find(|b| b.hash.to_lowercase() == target);
              } else if let Some(idx) = req.height.or(req.start_index) { // Use height or fallback to start_index
-                 if idx < chain.chain.len() {
-                     block = Some(&chain.chain[idx]);
-                 }
+                 block = chain.get_block(idx as u64);
              }
              // Handle 'height' if passed as a specific field (not in struct yet).
              // The frontend sends { "command": "get_block", "height": 123 }.

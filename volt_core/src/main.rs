@@ -173,7 +173,7 @@ fn main() {
             else if input == "STOP_MINING" { *is_mining.lock().unwrap() = false; log("Mining STOPPED", &logs); }
             else if input == "STATUS" {
                 let peers = node.peers.lock().unwrap().len();
-                let height = blockchain.lock().unwrap().chain.len();
+                let height = blockchain.lock().unwrap().get_height();
                 log(&format!("Status: Height={}, Peers={}, Mining={}", height, peers, *is_mining.lock().unwrap()), &logs);
             }
             else if input.starts_with("ADD_NODE ") {

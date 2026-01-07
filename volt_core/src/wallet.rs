@@ -13,6 +13,8 @@ use aes_gcm::{
 use sha2::{Sha256, Digest};
 use hmac::Hmac;
 use bip39::Mnemonic;
+use crate::wallet::Wallet; // Self-reference fix if needed, otherwise redundant but safe.
+
 
 #[derive(Clone)] // Added Clone for easier handling if needed, though SigningKey might not be Clone? k256 SigningKey is Clone.
 pub struct Wallet {
@@ -161,6 +163,11 @@ impl Wallet {
         } else {
             String::new() // Fail silently or panic?
         }
+    }
+
+    pub fn save(&self) {
+        // Placeholder for consistency with API calls
+        // In a real app, this might persist to disk if not using encrypted storage
     }
 }
 

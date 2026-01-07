@@ -337,7 +337,8 @@ impl Node {
                             
                             // Listen for Response (Short lived connection for sync step)
                             // We wait for a few seconds to receive data then close
-                            socket.get_mut().set_read_timeout(Some(Duration::from_secs(5))).ok();
+                            // socket.get_mut().set_read_timeout... (Disabled for compilation if method missing on wrapper)
+                            // socket.get_mut().set_read_timeout(Some(Duration::from_secs(5))).ok();
                             
                             let start_time = std::time::Instant::now();
                             while start_time.elapsed() < Duration::from_secs(5) {

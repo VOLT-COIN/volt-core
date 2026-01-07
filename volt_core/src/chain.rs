@@ -444,7 +444,7 @@ impl Blockchain {
     /// Verifies the chain by simulating state reconstruction.
     /// Returns the resulting ChainState if valid, or an error if any transaction fails.
     pub fn verify_chain_state(chain: &Vec<Block>) -> Result<ChainState, String> {
-        let mut state = ChainState::new();
+        let mut state = ChainState::new(None);
 
         for block in chain {
             // 1. Process Improved Maturity (Unlock old rewards)
@@ -505,7 +505,7 @@ impl Blockchain {
         self.state.set_balance(address, token, amount);
     }
 
-    fn create_genesis_block(&mut self) {
+    fn create_genesis_block(&mut self) -> Block {
         // Fair Launch Genesis: No Premine
         // We create a purely symbolic Genesis Block.
         
@@ -547,13 +547,9 @@ impl Blockchain {
 
 
         // Save Genesis to DB and set TIP
-        if let Some(ref db) = self.db {
-            let _ = db.save_block(&genesis_block);
-        }
-        self.tip = Some(genesis_block.clone());
 
-        // Fix: Apply Genesis transactions to State so balance shows up immediately
-        self.rebuild_state();
+        // Fix: Return the block!
+        genesis_block
     }
 
     pub fn create_transaction(&mut self, transaction: Transaction) -> bool {
