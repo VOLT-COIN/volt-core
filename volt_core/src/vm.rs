@@ -1,4 +1,4 @@
-use wasmer::{Store, Module, Instance, Value, Imports, Function, FunctionEnv, FunctionEnvMut};
+use wasmer::{Store, Module, Instance, Value, Imports, Function, FunctionEnv, FunctionEnvMut, imports};
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 

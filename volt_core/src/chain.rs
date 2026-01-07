@@ -79,7 +79,6 @@ impl ChainState {
             asks: BTreeMap::new(),
             candles: HashMap::new(),
             nfts: HashMap::new(),
-            nfts: HashMap::new(),
             contracts: HashMap::new(),
             pending_rewards: BTreeMap::new(),
         }
@@ -92,7 +91,6 @@ impl ChainState {
             let _ = db.state_stakes().map(|t| t.clear());
             let _ = db.state_tokens().map(|t| t.clear());
             // Clear DEX RAM state as well
-            self.pools.clear();
             self.pools.clear();
             self.orders.clear();
             self.nfts.clear();
@@ -580,9 +578,10 @@ impl Blockchain {
             tx_type: crate::transaction::TxType::Transfer,
             nonce: 0,
             fee: 0,
-            price: 0,
             script_pub_key: crate::script::Script::new(),
             script_sig: crate::script::Script::new(),
+            price: 0,
+            data: vec![],
         };
 
         // Use Standard Difficulty 0x1d00ffff for Genesis to match chain config
@@ -1030,6 +1029,9 @@ impl Blockchain {
                      if nft.owner != transaction.sender { return false; }
                  } else { return false; }
                  self.state.nfts.remove(&transaction.token);
+            },
+            TxType::DeployContract | TxType::CallContract => {
+                // validation handled in apply_transaction for now
             }
         }
 

@@ -19,6 +19,8 @@ pub enum Message {
     Chain(Vec<Block>),
     GetPeers,
     Peers(Vec<String>),
+    FindNode(crate::kademlia::NodeId),
+    Neighbors(Vec<crate::kademlia::Peer>),
 }
 
 pub struct Node {

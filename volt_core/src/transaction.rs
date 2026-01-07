@@ -106,7 +106,6 @@ impl Transaction {
             fee: if fee == 0 { 100_000 } else { fee }, // Use provided fee or default
             script_pub_key,
             script_sig: Script::new(),
-            script_sig: Script::new(),
             price: 0,
             data: vec![],
         }
@@ -132,6 +131,7 @@ impl Transaction {
             script_pub_key: Script::new(),
             script_sig: Script::new(),
             price: 0,
+            data: vec![],
         }
     }
 
@@ -179,6 +179,7 @@ impl Transaction {
             script_pub_key: Script::new(),
             script_sig: Script::new(),
             price: 0,
+            data: vec![],
         }
     }
 
@@ -204,7 +205,8 @@ impl Transaction {
             fee: 100_000,
             script_pub_key: Script::new(),
             script_sig: Script::new(),
-            price,
+            price: 0,
+            data: vec![],
         }
     }
 
@@ -229,6 +231,7 @@ impl Transaction {
             script_pub_key: Script::new(),
             script_sig: Script::new(),
             price: 0,
+            data: vec![],
         }
     }
 
@@ -252,6 +255,7 @@ impl Transaction {
             script_pub_key: Script::new(),
             script_sig: Script::new(),
             price: 0,
+            data: vec![],
         }
     }
 
