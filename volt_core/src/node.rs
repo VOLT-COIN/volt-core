@@ -1,5 +1,5 @@
 use std::net::{TcpListener, TcpStream, SocketAddrV4, Ipv4Addr};
-use std::io::{Read, Write};
+use std::io::Write;
 use std::thread;
 use std::sync::{Arc, Mutex};
 use serde::{Serialize, Deserialize};
@@ -58,31 +58,63 @@ impl Node {
                             // ---------------------------------------------------------
                             
                             // Define the message handler logic (Shared by both paths)
-                            let process_message = |msg: Message, chain_inner: Arc<Mutex<Blockchain>>, peers_inner: Arc<Mutex<Vec<String>>>, port: u16| {
+                            // Return type changed to Result<Option<Message>, ()> to signal "Ban/Disconnect"
+                            let process_message = |msg: Message, chain_inner: Arc<Mutex<Blockchain>>, peers_inner: Arc<Mutex<Vec<String>>>, port: u16| -> Result<Option<Message>, ()> {
                                 match msg {
                                     Message::NewBlock(block) => {
                                         println!("[P2P] Received Block #{}", block.index);
                                         let mut chain = chain_inner.lock().unwrap();
-                                        if chain.submit_block(block.clone()) {
-                                            println!("[P2P] Block #{} Accepted & Verified.", block.index);
+                                        let last_index = chain.chain.last().map(|b| b.index).unwrap_or(0);
+
+                                        if block.index > last_index + 1 {
+                                            println!("[P2P] Received Future Block #{} (Head: {}). Requesting Sync.", block.index, last_index);
+                                            Ok(Some(Message::GetChain))
+                                        } else if block.index <= last_index {
+                                            println!("[P2P] Received Stale Block #{}. Ignoring.", block.index);
+                                            Ok(None)
                                         } else {
-                                            println!("[Security] Rejected Invalid Block #{} from Peer.", block.index);
+                                            // Verify Linkage
+                                            let last_hash = chain.chain.last().map(|b| b.hash.clone()).unwrap_or_default();
+                                            if block.previous_hash != last_hash {
+                                                 println!("[P2P] Block #{} Fork Detected. Requesting Sync to resolve.", block.index);
+                                                 return Ok(Some(Message::GetChain));
+                                            }
+
+                                            if chain.submit_block(block.clone()) {
+                                                println!("[P2P] Block #{} Accepted & Verified.", block.index);
+                                                
+                                                // GOSSIP: Broadcast to other peers
+                                                let p_list = peers_inner.lock().unwrap().clone();
+                                                let block_clone = block.clone();
+                                                thread::spawn(move || {
+                                                    let msg = Message::NewBlock(block_clone);
+                                                    if let Ok(json) = serde_json::to_string(&msg) {
+                                                        for peer in p_list {
+                                                            if let Ok(mut stream) = TcpStream::connect(&peer) {
+                                                                let _ = stream.write_all(json.as_bytes());
+                                                            }
+                                                        }
+                                                    }
+                                                });
+                                                Ok(None)
+                                            } else {
+                                                println!("[Security] REJECTED Invalid Block #{}. BANNING PEER.", block.index);
+                                                Err(()) 
+                                            }
                                         }
-                                        None
                                     },
                                     Message::NewTransaction(tx) => {
                                         println!("[P2P] Received Transaction");
                                         let mut chain = chain_inner.lock().unwrap();
                                         chain.create_transaction(tx);
-                                        None
+                                        Ok(None)
                                     },
                                     Message::GetChain => {
                                         println!("[P2P] Received Chain Request");
                                         let chain = chain_inner.lock().unwrap();
                                         let msg_resp = Message::Chain(chain.chain.clone());
                                         drop(chain); // Unlock
-                                        // Return response to caller to send back
-                                        Some(msg_resp)
+                                        Ok(Some(msg_resp))
                                     },
                                     Message::Chain(remote_chain) => {
                                         println!("[P2P] Received Chain Data (Height: {})", remote_chain.len());
@@ -90,12 +122,12 @@ impl Node {
                                         if chain.attempt_chain_replacement(remote_chain) {
                                             println!("[P2P] Chain synchronized successfully.");
                                         }
-                                        None
+                                        Ok(None)
                                     },
                                     Message::GetPeers => {
                                         let p = peers_inner.lock().unwrap().clone();
                                         let msg_resp = Message::Peers(p);
-                                        Some(msg_resp)
+                                        Ok(Some(msg_resp))
                                     },
                                     Message::Peers(new_peers) => {
                                         let mut p_lock = peers_inner.lock().unwrap();
@@ -109,7 +141,7 @@ impl Node {
                                             }
                                         }
                                         if added > 0 { println!("[P2P] Discovered {} new peers!", added); }
-                                        None
+                                        Ok(None)
                                     }
                                 }
                             };
@@ -125,14 +157,21 @@ impl Node {
                                     Ok(mut socket) => {
                                         // Loop to read messages
                                         loop {
-                                            if let Ok(msg) = socket.read_message() {
+                                            if let Ok(msg) = socket.read() {
                                                 if msg.is_text() || msg.is_binary() {
                                                     let text = msg.to_text().unwrap_or("{}");
                                                     if let Ok(parsed_msg) = serde_json::from_str::<Message>(text) {
-                                                        // Process Message
-                                                        if let Some(response) = process_message(parsed_msg, chain_inner.clone(), peers_inner.clone(), port) {
-                                                            let json = serde_json::to_string(&response).unwrap_or_default();
-                                                            let _ = socket.write_message(tungstenite::Message::Text(json));
+                                                        // Process Message (With Ban Logic)
+                                                        match process_message(parsed_msg, chain_inner.clone(), peers_inner.clone(), port) {
+                                                            Ok(Some(response)) => {
+                                                                let json = serde_json::to_string(&response).unwrap_or_default();
+                                                                let _ = socket.send(tungstenite::Message::Text(json));
+                                                            },
+                                                            Ok(None) => {}, // Continue
+                                                            Err(_) => {
+                                                                println!("[Security] Banning/Disconnecting Peer.");
+                                                                break;
+                                                            }
                                                         }
                                                     }
                                                 } else if msg.is_close() {
@@ -149,13 +188,18 @@ impl Node {
                                 // Raw TCP Path (Legacy)
                                 let mut de = serde_json::Deserializer::from_reader(&stream);
                                 if let Ok(msg) = Message::deserialize(&mut de) {
-                                     // NOTE: Original code only handled ONE message per connection for some reason?
-                                     // Or the stream closes? Keeping original behavior for Raw TCP but reusing logic.
-                                     if let Some(response) = process_message(msg, chain_inner.clone(), peers_inner.clone(), port) {
-                                         let json = serde_json::to_string(&response).unwrap_or_default();
-                                         if let Ok(mut stream_clone) = stream.try_clone() {
-                                             let _ = stream_clone.write_all(json.as_bytes());
-                                             let _ = stream_clone.flush();
+                                     match process_message(msg, chain_inner.clone(), peers_inner.clone(), port) {
+                                         Ok(Some(response)) => {
+                                             let json = serde_json::to_string(&response).unwrap_or_default();
+                                             if let Ok(mut stream_clone) = stream.try_clone() {
+                                                 let _ = stream_clone.write_all(json.as_bytes());
+                                                 let _ = stream_clone.flush();
+                                             }
+                                         },
+                                         Ok(None) => {},
+                                         Err(_) => {
+                                             println!("[Security] Banning/Disconnecting Peer (TCP).");
+                                             // Loop/Scope ends, thread finishes, connection drops.
                                          }
                                      }
                                 }
@@ -165,6 +209,71 @@ impl Node {
                     Err(e) => {
                         println!("Connection failed: {}", e);
                     }
+                }
+            }
+        });
+
+        // ---------------------------------------------------------
+        // CLIENT SIDE: P2P Only (WebSocket)
+        // ---------------------------------------------------------
+        let chain_client = self.blockchain.clone();
+        let peers_client = self.peers.clone();
+        let port_client = self.port;
+
+        thread::spawn(move || {
+            loop {
+                thread::sleep(std::time::Duration::from_secs(10)); // Discovery Interval
+                
+                let peers_list = peers_client.lock().unwrap().clone();
+                for peer in peers_list {
+                    // Avoid self-connect
+                    if peer.contains(&format!("127.0.0.1:{}", port_client)) { continue; }
+                    
+                    let chain_inner = chain_client.clone();
+                    let peers_inner = peers_client.clone();
+                    let peer_addr = peer.clone();
+                    
+                    thread::spawn(move || {
+                        let ws_url = format!("ws://{}", peer_addr);
+                        if let Ok((mut socket, _)) = tungstenite::connect(ws_url) {
+                            // Handshake: Send GetPeers + GetChain
+                            let _ = socket.send(tungstenite::Message::Text(serde_json::to_string(&Message::GetPeers).unwrap()));
+                            let _ = socket.send(tungstenite::Message::Text(serde_json::to_string(&Message::GetChain).unwrap()));
+                            
+                            loop {
+                                if let Ok(msg) = socket.read() { // Changed to read()
+                                    if msg.is_text() {
+                                        let text = msg.to_text().unwrap_or("{}");
+                                        if let Ok(parsed) = serde_json::from_str::<Message>(text) {
+                                            match parsed {
+                                                Message::Peers(new_p) => {
+                                                     let mut p_lock = peers_inner.lock().unwrap();
+                                                     for np in new_p {
+                                                         if !p_lock.contains(&np) { p_lock.push(np); }
+                                                     }
+                                                },
+                                                Message::Chain(remote) => {
+                                                     let mut c = chain_inner.lock().unwrap();
+                                                     c.attempt_chain_replacement(remote);
+                                                },
+                                                Message::NewBlock(b) => {
+                                                     let mut c = chain_inner.lock().unwrap();
+                                                     c.submit_block(b);
+                                                },
+                                                Message::NewTransaction(t) => {
+                                                     let mut c = chain_inner.lock().unwrap();
+                                                     c.create_transaction(t);
+                                                },
+                                                _ => {}
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    break;
+                                }
+                            }
+                        }
+                    });
                 }
             }
         });
@@ -185,13 +294,13 @@ impl Node {
                      // Handshake: GetChain
                      let msg = Message::GetChain;
                      let json = serde_json::to_string(&msg).unwrap_or_default();
-                     if let Err(e) = socket.write_message(tungstenite::Message::Text(json)) {
+                     if let Err(e) = socket.send(tungstenite::Message::Text(json)) {
                          println!("[P2P] Failed to send Handshake: {}", e);
                          return;
                      }
                      
                      // Read Response
-                     match socket.read_message() {
+                     match socket.read() {
                          Ok(msg) => {
                              if let tungstenite::Message::Text(text) = msg {
                                  if let Ok(Message::Chain(remote_chain)) = serde_json::from_str(&text) {
@@ -242,7 +351,7 @@ impl Node {
 
                      let json = serde_json::to_string(&msg).unwrap_or_default();
                      
-                     if let Err(e) = socket.write_message(tungstenite::Message::Text(json)) {
+                     if let Err(e) = socket.send(tungstenite::Message::Text(json)) {
                          println!("[Sync] Failed to send data via WSS: {}", e);
                      } else {
                          println!("[Sync] Chain data uploaded successfully via WSS.");
@@ -319,8 +428,8 @@ impl Node {
                              Ok((mut socket, _)) => {
                                  let msg = Message::GetPeers;
                                  let json = serde_json::to_string(&msg).unwrap_or_default();
-                                 if socket.write_message(tungstenite::Message::Text(json)).is_ok() {
-                                     if let Ok(msg) = socket.read_message() {
+                                 if socket.send(tungstenite::Message::Text(json)).is_ok() {
+                                     if let Ok(msg) = socket.read() {
                                           if let tungstenite::Message::Text(text) = msg {
                                               if let Ok(Message::Peers(new_list)) = serde_json::from_str(&text) {
                                                   let mut p_lock = peers_ref.lock().unwrap();

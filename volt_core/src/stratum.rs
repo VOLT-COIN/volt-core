@@ -1,12 +1,10 @@
 ﻿use std::net::{TcpListener, TcpStream};
-use std::io::{BufRead, BufReader, Write, Read};
+use std::io::{BufRead, BufReader, Write};
 use std::thread;
 use std::sync::{Arc, Mutex};
 use serde::{Serialize, Deserialize};
 use crate::chain::Blockchain;
 use std::time::{SystemTime, UNIX_EPOCH, Duration};
-use k256::ecdsa::signature::Signer; 
-use k256::elliptic_curve::sec1::ToEncodedPoint;
 use tungstenite::{Message, WebSocket};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -15,6 +13,8 @@ struct RpcRequest {
     method: String,
     params: Vec<serde_json::Value>,
 }
+
+use ripemd::{Ripemd160, Digest}; // Added for P2PKH
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct RpcResponse {
@@ -39,7 +39,7 @@ struct Share {
     timestamp: u64,
 }
 
-const POOL_FEE: f64 = 0.0; 
+const _POOL_FEE: f64 = 0.0; 
 
 pub struct StratumServer {
     blockchain: Arc<Mutex<Blockchain>>,
@@ -226,9 +226,27 @@ fn process_rpc_request(
                         let reward_amt = block.transactions[0].amount;
                         let amt_hex = hex::encode(reward_amt.to_le_bytes());
                         let height_bytes = (block.index as u32).to_le_bytes();
-                        let height_push = format!("04{}", hex::encode(height_bytes));
+                        // Fix: Use 0c (PUSH 12) matches the script constructed below (Height + Extra1 + Ex2 = 12 bytes)
+                        let height_push = format!("0c{}", hex::encode(height_bytes));
                         let coinb1 = format!("010000000100000000000000000000000000000000000000000000000000000000ffffffff0d{}", height_push);
-                        let coinb2 = format!("ffffffff01{}1976a91439209d6f37e633202573205730305f523030303088ac00000000", amt_hex);
+                        
+                        // Dynamic P2PKH Script
+                        let miner_addr_hex = session_miner_addr.lock().unwrap().clone();
+                        let pub_key_bytes = hex::decode(&miner_addr_hex).unwrap_or(vec![0;33]);
+                        
+                        use sha2::Digest;
+                        use ripemd::Ripemd160;
+                        
+                        let mut sha = sha2::Sha256::new();
+                        sha.update(&pub_key_bytes);
+                        let sha_hash = sha.finalize();
+                        
+                        let mut rip = Ripemd160::new();
+                        rip.update(&sha_hash);
+                        let pub_key_hash = rip.finalize();
+                        let pub_key_hash_hex = hex::encode(pub_key_hash);
+                        
+                        let coinb2 = format!("ffffffff01{}1976a914{}88ac00000000", amt_hex, pub_key_hash_hex);
                         let extra_nonce_1 = "00000000";
                         let coinb = format!("{}{}{}{}", coinb1, extra_nonce_1, ex2, coinb2);
                         
@@ -330,7 +348,7 @@ fn handle_client(
                 *height_n.lock().unwrap() = h;
 
                 let job_id = format!("{}_{}", next_block.index, next_block.timestamp);
-                let notify = serde_json::json!({
+                let _notify = serde_json::json!({
                     "id": null, "method": "mining.notify",
                     "params": [ job_id, "PREVHASH", "COINB1", "COINB2", [], "00000001", "BITS", "TIME", true ]
                 });
@@ -348,8 +366,27 @@ fn handle_client(
                 let amt_hex = hex::encode(reward.to_le_bytes());
                 let h_bytes = (next_block.index as u32).to_le_bytes();
                 let h_push = format!("04{}", hex::encode(h_bytes));
+                // Dynamic P2PKH Script Generation
+                let miner_addr_hex = miner_n.lock().unwrap().clone();
+                let pub_key_bytes = hex::decode(&miner_addr_hex).unwrap_or(vec![0;33]); // Default to 0 if invalid
+                
+                // HASH160(PubKey) = RIPEMD160(SHA256(PubKey))
+                use sha2::Digest;
+                use ripemd::Ripemd160;
+                
+                let mut sha = sha2::Sha256::new();
+                sha.update(&pub_key_bytes);
+                let sha_hash = sha.finalize();
+                
+                let mut rip = Ripemd160::new();
+                rip.update(&sha_hash);
+                let pub_key_hash = rip.finalize();
+                let pub_key_hash_hex = hex::encode(pub_key_hash);
+
                 let cb1 = format!("010000000100000000000000000000000000000000000000000000000000000000ffffffff0d{}", h_push);
-                let cb2 = format!("ffffffff01{}1976a91439209d6f37e633202573205730305f523030303088ac00000000", amt_hex);
+                // Script: OP_DUP (76) OP_HASH160 (a9) OP_PUSH20 (14) <HASH> OP_EQUALVERIFY (88) OP_CHECKSIG (ac)
+                // P2PKH Length = 25 bytes (1 + 1 + 1 + 20 + 1 + 1) -> 0x19 (25)
+                let cb2 = format!("ffffffff01{}1976a914{}88ac00000000", amt_hex, pub_key_hash_hex);
                 let bits = format!("{:08x}", next_block.difficulty);
                 let ntime = format!("{:08x}", next_block.timestamp);
                 
@@ -436,9 +473,25 @@ fn handle_client_ws(
                 let reward = next_block.transactions[0].amount;
                 let amt_hex = hex::encode(reward.to_le_bytes());
                 let h_bytes = (next_block.index as u32).to_le_bytes();
-                let h_push = format!("04{}", hex::encode(h_bytes));
+                let h_bytes = (next_block.index as u32).to_le_bytes();
+                // Fix: Use 0c (PUSH 12)
+                let h_push = format!("0c{}", hex::encode(h_bytes));
                 let cb1 = format!("010000000100000000000000000000000000000000000000000000000000000000ffffffff0d{}", h_push);
-                let cb2 = format!("ffffffff01{}1976a91439209d6f37e633202573205730305f523030303088ac00000000", amt_hex);
+                
+                // Dynamic P2PKH for WS
+                let miner_addr_hex = session_miner_addr.lock().unwrap().clone();
+                let pub_key_bytes = hex::decode(&miner_addr_hex).unwrap_or(vec![0;33]);
+                
+                let mut sha = sha2::Sha256::new();
+                sha.update(&pub_key_bytes);
+                let sha_hash = sha.finalize();
+                
+                let mut rip = Ripemd160::new();
+                rip.update(&sha_hash);
+                let pub_key_hash = rip.finalize();
+                let pub_key_hash_hex = hex::encode(pub_key_hash);
+
+                let cb2 = format!("ffffffff01{}1976a914{}88ac00000000", amt_hex, pub_key_hash_hex);
                 let bits = format!("{:08x}", next_block.difficulty);
                 let ntime = format!("{:08x}", next_block.timestamp);
                 
@@ -455,13 +508,13 @@ fn handle_client_ws(
                 });
 
                 if let Ok(s) = serde_json::to_string(&notify) {
-                     let _ = socket.write_message(Message::Text(s));
+                     let _ = socket.send(Message::Text(s));
                 }
             }
         }
 
         // 2. Read Message (with timeout)
-        match socket.read_message() {
+        match socket.read() {
             Ok(msg) => {
                 if msg.is_text() || msg.is_binary() {
                     let text = msg.to_text().unwrap_or("");
@@ -471,7 +524,7 @@ fn handle_client_ws(
                         if let Some(val) = res {
                             let resp = RpcResponse { id: req.id, result: Some(val), error: None };
                             if let Ok(s) = serde_json::to_string(&resp) {
-                                let _ = socket.write_message(Message::Text(s));
+                                let _ = socket.send(Message::Text(s));
                             }
                         }
                     }

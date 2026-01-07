@@ -19,6 +19,7 @@ k256 = { version = "0.13", features = ["ecdsa", "serde"] }
 rand_core = { version = "0.6", features = ["std"] }
 aes-gcm = "0.10"
 pbkdf2 = "0.11"
+ripemd = "0.1" # Added for P2PKH Hashing
 hmac = "0.12"
 rand = "0.8"
 signature = "2.0"

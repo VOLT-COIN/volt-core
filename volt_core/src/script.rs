@@ -47,7 +47,16 @@ impl VirtualMachine {
     }
 
     pub fn execute(&mut self, script: &Script, context: &Transaction) -> bool {
+        let mut op_count = 0;
+        let max_ops = 200; // Security Limit
+
         for op in &script.ops {
+            op_count += 1;
+            if op_count > max_ops {
+                // println!("Script rejected: Too many operations");
+                return false; 
+            }
+
             match op {
                 OpCode::OpPush(data) => {
                     self.stack.push(data.clone());
@@ -87,7 +96,7 @@ impl VirtualMachine {
                     // 3. Verify
                     
                     let valid = if let Ok(pk) = VerifyingKey::from_sec1_bytes(&pub_key_bytes) {
-                        if let Ok(sig) = Signature::from_der(&sig_bytes) {
+                        if let Ok(sig) = Signature::from_slice(&sig_bytes) {
                             // Verify against Transaction Context!
                             // We hash the Transaction (excluding signature) usually.
                             // Here we use `get_hash()` which includes EVERYTHING.

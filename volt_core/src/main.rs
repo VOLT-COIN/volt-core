@@ -26,6 +26,36 @@ fn log(msg: &str, logs: &Arc<Mutex<Vec<String>>>) {
     let mut l = logs.lock().unwrap();
     l.push(format!("[{}] {}", chrono::Local::now().format("%H:%M:%S"), msg));
     if l.len() > 1000 { l.remove(0); } // Keep buffer small
+    if l.len() > 1000 { l.remove(0); } // Keep buffer small
+}
+
+// Internal CPU Miner Thread
+fn start_miner_thread(
+    blockchain: Arc<Mutex<Blockchain>>,
+    wallet: Arc<Mutex<Wallet>>,
+    is_mining: Arc<Mutex<bool>>
+) {
+    thread::spawn(move || {
+        log("Internal Miner Thread Initialized", &Arc::new(Mutex::new(Vec::new()))); 
+        loop {
+            // Check flag
+            let mining_active = *is_mining.lock().unwrap();
+            
+            if mining_active {
+                let mut chain = blockchain.lock().unwrap();
+                let miner_addr = wallet.lock().unwrap().get_address();
+                
+                // Runs for 100k hashes then yields (returns false if not found)
+                // If found, it saves the block inside this call.
+                chain.mine_pending_transactions(miner_addr);
+                
+                drop(chain); // Explicit unlock to let P2P/API access chain
+                thread::sleep(Duration::from_millis(10)); // Yield CPU
+            } else {
+                thread::sleep(Duration::from_secs(1));
+            }
+        }
+    });
 }
 
 fn main() {
@@ -124,11 +154,19 @@ fn main() {
     // 9. Launch Interface (Console Only for now due to linker issues)
     log("Running in CONSOLE mode. Type commands (START_MINING, STOP_MINING, SEND...)", &logs);
     
+    // 4b. Start Internal Miner Thread
+    start_miner_thread(blockchain.clone(), miner_wallet.clone(), is_mining.clone());
+
     let stdin = std::io::stdin();
     let mut buffer = String::new();
     loop {
         buffer.clear();
-        if stdin.read_line(&mut buffer).is_ok() {
+        match stdin.read_line(&mut buffer) {
+            Ok(0) => {
+                log("EOF Detected. Entering Service Mode (No Console).", &logs);
+                loop { thread::sleep(Duration::from_secs(3600)); } // Keep process alive
+            },
+            Ok(_) => {
             let input = buffer.trim();
             // Simple command handler here (subset of previous)
             if input == "START_MINING" { *is_mining.lock().unwrap() = true; log("Mining STARTED", &logs); }
@@ -149,8 +187,13 @@ fn main() {
                 node.sync_chain_to_peer(peer);
             }
             else if input == "EXIT" { break; }
+        },
+        Err(e) => {
+            log(&format!("Error reading input: {}", e), &logs);
+            break;
         }
     }
+}
     
     /* GUI DISABLED - LINKER ISSUES
     if headless {

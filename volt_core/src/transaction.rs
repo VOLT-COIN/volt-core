@@ -2,6 +2,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Serialize, Deserialize};
 use k256::ecdsa::{SigningKey, VerifyingKey, Signature, signature::Signer};
 use k256::ecdsa::signature::Verifier;
+use k256::elliptic_curve::scalar::IsHigh; // Trait required for is_high() check
 use crate::script::Script;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -121,7 +122,7 @@ impl Transaction {
         // Deterministic Hashing for Cross-Platform Signing (JS <-> Rust)
         // Including price and tx_type to secure DEX orders
         let payload = format!(
-            "{}:{}:{}:{}:{}:{}:{}:{:?}",
+            "{}:{}:{}:{}:{}:{}:{}:{:?}:{}",
             self.sender,
             self.receiver,
             self.amount,
@@ -129,7 +130,8 @@ impl Transaction {
             self.token,
             self.timestamp,
             self.price,
-            self.tx_type
+            self.tx_type,
+            self.fee // Fix: Include Fee in Hash to preventing tampering
         );
         
         use sha2::{Sha256, Digest};
@@ -351,6 +353,13 @@ impl Transaction {
         
         let signature_bytes = hex::decode(&self.signature).expect("Invalid signature hex");
         let signature = Signature::from_der(&signature_bytes).expect("Invalid signature");
+
+        // Advanced Security: Enforce Low-S (BIP-62)
+        // If the S-value is "High" (greater than N/2), it is malleable.
+        // We reject High-S signatures to ensure TxID immutability.
+        if signature.s().is_high().into() {
+             return false;
+        }
 
         let hash = self.get_hash();
         public_key.verify(&hash, &signature).is_ok()

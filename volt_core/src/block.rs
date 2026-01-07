@@ -19,7 +19,7 @@ pub struct Block {
 impl Block {
     pub fn new(index: u64, previous_hash: String, transactions: Vec<Transaction>, difficulty: usize, validator_stake: u64) -> Self {
         let timestamp = Utc::now().timestamp() as u64; // Seconds
-        let proof_of_work = 0;
+        let proof_of_work: u32 = rand::random(); // Randomize start to avoid looping same nonces on retry
         let hash = String::new();
         let merkle_root = Block::calculate_merkle_root(&transactions);
 
@@ -121,22 +121,28 @@ impl Block {
         hex::encode(res2)
     }
 
-    pub fn mine(&mut self, difficulty: usize) {
+    pub fn mine(&mut self, difficulty: usize, max_iterations: u64) -> bool {
         // Hybrid Consensus: Apply Bonus Locally
         let bonus = (self.validator_stake / 10_000_000_000) as u32; 
         let bonus_capped = bonus.min(5);
         let effective_diff = (difficulty as u32).saturating_sub(bonus_capped);
         let mut required_diff = if effective_diff < 1 { 1 } else { effective_diff };
+        
         // FIX: Handle Bits format (large number)
         if required_diff > 64 { required_diff = 4; } 
         
         // println!("Mining with Stake Bonus: -{} Diff (Effective: {})", bonus_capped, required_diff);
 
         let target = "0".repeat(required_diff as usize);
+        let mut iterations = 0;
+
         while !self.hash.starts_with(&target) {
             self.proof_of_work += 1;
             self.hash = self.calculate_hash();
+            iterations += 1;
+            if iterations > max_iterations { return false; }
         }
         println!("Block mined: {}", self.hash);
+        true
     }
 }

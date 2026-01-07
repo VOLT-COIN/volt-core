@@ -1,7 +1,9 @@
 /target
+**/*.zip
 **/target/
 volt_core/target/
 volt_wallet/target/
+target/
 **/*.exe
 **/*.dll
 **/*.rlib
@@ -13,6 +15,7 @@ volt_wallet/assets/
 **/*.rs.bk
 *.pdb
 *.io
+*ps1
 # *.lock (Removed)
 .idea/
 .vscode/
@@ -28,6 +31,9 @@ dist/
 *_draft.txt
 *.log
 wallet.key
+DEPLOY_README.md
+PROJECT_DOCUMENTATION.md
+VPS_SETUP_GUIDE.md
 
 # Local Keys
 wallet.dat
@@ -42,3 +48,11 @@ wallet_app/
 # OS
 Thumbs.db
 .DS_Store
+
+# Auto-added ignores
+volt.db/
+Volt_App_Final/
+Volt_App_Stage/
+hf_deploy/
+web_deploy/
+explorer/

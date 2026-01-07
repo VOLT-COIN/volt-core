@@ -115,7 +115,10 @@ impl ApiServer {
                                     is_http = true;
                                     // Handle Preflight OPTIONS
                                     if request_str.starts_with("OPTIONS") {
-                                         let response = "HTTP/1.1 204 No Content\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: POST, GET, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\n\r\n";
+                                         // Fix: Remove Wildcard CORS. Only allow specific methods/headers if needed, or rely on Same-Origin.
+                                         // For broad compatibility with local wallet apps while blocking websites, we can reflect Origin if it is localhost.
+                                         // For now, simpliest security is REMOVE the allow-origin.
+                                         let response = "HTTP/1.1 204 No Content\r\nAccess-Control-Allow-Methods: POST, GET, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\n\r\n";
                                          let _ = stream.write_all(response.as_bytes());
                                          return;
                                     }
@@ -142,7 +145,7 @@ impl ApiServer {
                                 if is_http {
                                     let content_len = response_json.len();
                                     let http_response = format!(
-                                        "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
                                         content_len,
                                         response_json
                                     );
@@ -485,18 +488,20 @@ fn handle_request(
                 let current_nonce = *chain.state.nonces.get(&wallet.get_address()).unwrap_or(&0);
                 let next_nonce = current_nonce + 1;
                 
+                // Calculate Fee (0.1% default if not provided)
+                let final_fee = req.fee.unwrap_or_else(|| {
+                     let calc = amount / 1000; // 0.1%
+                     if calc < 100_000 { 100_000 } else { calc }
+                });
+
                 let mut tx = Transaction::new(
                     wallet.get_address(),
                     to,
                     amount,
-                    req.token.clone().unwrap_or("VLT".to_string()),
+                    "VLT".to_string(),
                     next_nonce
                 );
-                
-                // Phase 12: Apply provided fee or default
-                if let Some(f) = req.fee {
-                    tx.fee = f;
-                }
+                tx.fee = final_fee;
                 
                 tx.sign(&wallet.private_key);
                 
@@ -753,7 +758,8 @@ fn handle_request(
              let mut block = None;
 
              if let Some(h) = req.hash {
-                 block = chain.chain.iter().find(|b| b.hash == h);
+                 let target = h.to_lowercase();
+                 block = chain.chain.iter().find(|b| b.hash.to_lowercase() == target);
              } else if let Some(idx) = req.height.or(req.start_index) { // Use height or fallback to start_index
                  if idx < chain.chain.len() {
                      block = Some(&chain.chain[idx]);

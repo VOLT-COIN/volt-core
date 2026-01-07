@@ -179,16 +179,18 @@ impl Database {
                      if let Ok(key_str) = str::from_utf8(&key) {
                          let parts: Vec<&str> = key_str.split(':').collect();
                          if parts.len() == 2 {
-                             let txid = parts[1];
-                             if let Ok(Some(tx_vec)) = self.txs().and_then(|t| t.get(txid)) {
-                                 if let Ok(tx) = serde_json::from_slice::<Transaction>(&tx_vec) {
-                                     let tx_token = tx.token.clone();
-                                     if tx_token == token {
-                                         if tx.receiver == address {
-                                             balance += tx.amount as i64;
-                                         }
-                                         if tx.sender == address {
-                                             balance -= tx.amount as i64;
+                             let txid_hex = parts[1];
+                             if let Ok(txid_bytes) = hex::decode(txid_hex) {
+                                 if let Ok(Some(tx_vec)) = self.txs().and_then(|t| t.get(&txid_bytes)) {
+                                     if let Ok(tx) = serde_json::from_slice::<Transaction>(&tx_vec) {
+                                         let tx_token = tx.token.clone();
+                                         if tx_token == token {
+                                             if tx.receiver == address {
+                                                 balance += tx.amount as i64;
+                                             }
+                                             if tx.sender == address {
+                                                 balance -= tx.amount as i64;
+                                             }
                                          }
                                      }
                                  }
@@ -215,10 +217,12 @@ impl Database {
                      if let Ok(key_str) = std::str::from_utf8(&key) {
                          let parts: Vec<&str> = key_str.split(':').collect();
                          if parts.len() == 2 {
-                             let txid = parts[1];
-                             if let Ok(Some(tx_vec)) = self.txs().and_then(|t| t.get(txid)) {
-                                 if let Ok(tx) = serde_json::from_slice::<Transaction>(&tx_vec) {
-                                     history.push(tx);
+                             let txid_hex = parts[1];
+                             if let Ok(txid_bytes) = hex::decode(txid_hex) {
+                                 if let Ok(Some(tx_vec)) = self.txs().and_then(|t| t.get(&txid_bytes)) {
+                                     if let Ok(tx) = serde_json::from_slice::<Transaction>(&tx_vec) {
+                                         history.push(tx);
+                                     }
                                  }
                              }
                          }
