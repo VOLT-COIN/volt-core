@@ -462,30 +462,6 @@ fn handle_request(
                 ApiResponse { status: "error".to_string(), message: "Missing address".to_string(), data: None }
             }
         },
-        "get_transaction" => {
-            if let Some(hash_hex) = req.hash {
-                let chain = blockchain.lock().unwrap();
-                if let Some(tx) = chain.get_transaction(&hash_hex) {
-                    let mut tx_val = serde_json::to_value(&tx).unwrap_or(serde_json::Value::Null);
-                    
-                    // Add extra context if possible
-                    let height = chain.get_height();
-                    // We need to find WHICH block contains it to get block info/confirmations
-                    // For now, if get_transaction works, it's in DB.
-                    // To find block height efficiently, we'd need a TxIndex.
-                    // For now, let's return the tx.
-                    
-                    ApiResponse {
-                        status: "success".to_string(),
-                        message: "Transaction found".to_string(),
-                        data: Some(tx_val)
-                    }
-                } else {
-                    ApiResponse { status: "error".to_string(), message: "Transaction not found".to_string(), data: None }
-                }
-            } else {
-                ApiResponse { status: "error".to_string(), message: "Missing hash".to_string(), data: None }
-            }
         },
         "get_peers" => {
             let peers = node.peers.lock().unwrap().clone();
