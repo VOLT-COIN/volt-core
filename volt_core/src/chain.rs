@@ -3,7 +3,10 @@ use crate::block::Block;
 use crate::transaction::{Transaction, TxType};
 use crate::db::Database;
 use crate::script::VirtualMachine;
+use crate::db::Database;
+use crate::script::VirtualMachine;
 use std::collections::{HashMap, BTreeMap, HashSet};
+use std::sync::Arc;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Order {
@@ -43,59 +46,43 @@ pub struct NFT {
     pub created_at: u64,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 pub struct ChainState {
-    pub balances: HashMap<String, HashMap<String, u64>>,
-    pub tokens: HashMap<String, String>, 
-    pub nonces: HashMap<String, u64>,
-    pub stakes: HashMap<String, u64>,
-
-    pub orders: HashMap<String, Order>, // OrderID -> Order
-    // Optimization: BTreeMaps for O(log N) matching
-    // Key: (Token, Price, Timestamp) -> Value: OrderID
-    // Token is needed because we match per pair.
-    pub bids: BTreeMap<(String, u64, u64), String>, 
-    pub asks: BTreeMap<(String, u64, u64), String>,
-
-    pub pools: HashMap<String, Pool>,   // "TokenA/TokenB" -> Pool
-    pub candles: HashMap<String, Vec<Candle>>, // "Pair" -> History
-    pub nfts: HashMap<String, NFT>, // NFT_ID -> NFT
-    
-    // Coinbase Maturity: Lock mining rewards for 100 blocks
-    // Key: BlockHeight (when it unlocks) -> Value: List of (Address, Amount)
-    pub pending_rewards: BTreeMap<u64, Vec<(String, u64)>>, 
+    pub db: Option<Arc<Database>>,
+    // Cache or other non-persisted state if needed
 }
 
 impl ChainState {
-    pub fn new() -> Self {
+    pub fn new(db: Option<Arc<Database>>) -> Self {
         ChainState {
-            balances: HashMap::new(),
-            tokens: HashMap::new(),
-            nonces: HashMap::new(),
-            stakes: HashMap::new(),
-
-            orders: HashMap::new(),
-            bids: BTreeMap::new(),
-            asks: BTreeMap::new(),
-            
-            pools: HashMap::new(),
-            candles: HashMap::new(),
-            nfts: HashMap::new(),
-            pending_rewards: BTreeMap::new(),
+            db
         }
     }
 
     pub fn get_balance(&self, address: &str, token: &str) -> u64 {
-        if let Some(user_tokens) = self.balances.get(address) {
-            *user_tokens.get(token).unwrap_or(&0)
-        } else {
-            0
+        if let Some(ref db) = self.db {
+            if let Ok(tree) = db.state_balances() {
+                let key = format!("{}:{}", address, token);
+                if let Ok(Some(val)) = tree.get(key) {
+                    let mut bytes = [0u8; 8];
+                    if val.len() == 8 {
+                        bytes.copy_from_slice(&val);
+                        return u64::from_be_bytes(bytes);
+                    }
+                }
+            }
         }
+        0 // Default if missing or DB error
     }
 
     fn set_balance(&mut self, address: &str, token: &str, amount: u64) {
-        let user_tokens = self.balances.entry(address.to_string()).or_insert_with(HashMap::new);
-        user_tokens.insert(token.to_string(), amount);
+        if let Some(ref db) = self.db {
+            if let Ok(tree) = db.state_balances() {
+                let key = format!("{}:{}", address, token);
+                let val = amount.to_be_bytes();
+                let _ = tree.insert(key, &val);
+            }
+        }
     }
 
     fn update_candle(&mut self, pair: &str, price: u64, volume: u64, timestamp: u64) {
@@ -143,10 +130,60 @@ impl ChainState {
             };
 
             if !fee_paid_in_vlt {
-                // Strict VLT Fee Enforcement: Preventing Spam with worthless tokens
-                // println!("Insufficient VLT for fee");
-                return false;
+                pub fn get_stake(&self, address: &str) -> u64 {
+         if let Some(ref db) = self.db {
+            if let Ok(tree) = db.state_stakes() {
+                if let Ok(Some(val)) = tree.get(address) {
+                    let mut bytes = [0u8; 8];
+                    if val.len() == 8 {
+                         bytes.copy_from_slice(&val);
+                         return u64::from_be_bytes(bytes);
+                    }
+                }
             }
+         }
+         0
+    }
+
+    pub fn set_stake(&mut self, address: &str, amount: u64) {
+         if let Some(ref db) = self.db {
+             if let Ok(tree) = db.state_stakes() {
+                 let _ = tree.insert(address, &amount.to_be_bytes());
+             }
+         }
+    }
+
+    pub fn get_nonce(&self, address: &str) -> u64 {
+         if let Some(ref db) = self.db {
+            if let Ok(tree) = db.state_nonces() {
+                if let Ok(Some(val)) = tree.get(address) {
+                    let mut bytes = [0u8; 8];
+                    if val.len() == 8 {
+                         bytes.copy_from_slice(&val);
+                         return u64::from_be_bytes(bytes);
+                    }
+                }
+            }
+         }
+         0
+    }
+
+    pub fn set_nonce(&mut self, address: &str, nonce: u64) {
+         if let Some(ref db) = self.db {
+             if let Ok(tree) = db.state_nonces() {
+                 let _ = tree.insert(address, &nonce.to_be_bytes());
+             }
+         }
+    }
+
+    pub fn token_exists(&self, token: &str) -> bool {
+         if let Some(ref db) = self.db {
+            if let Ok(tree) = db.state_tokens() {
+                return tree.contains_key(token).unwrap_or(false);
+            }
+         }
+         false
+    }
 
             // 2. Debit Amount (Token)
             if tx.tx_type == TxType::Transfer || tx.tx_type == TxType::Stake {
@@ -177,9 +214,9 @@ impl ChainState {
             }
             
             if tx.tx_type == TxType::Stake {
-                let current_stake = *self.stakes.get(&tx.sender).unwrap_or(&0);
+                let current_stake = self.get_stake(&tx.sender);
                 if let Some(new_stake) = current_stake.checked_add(tx.amount) {
-                    self.stakes.insert(tx.sender.clone(), new_stake);
+                    self.set_stake(&tx.sender, new_stake);
                 }
             }
         }
@@ -192,10 +229,10 @@ impl ChainState {
             }
         } else if tx.tx_type == TxType::Unstake {
              // Return Stake
-             let current_stake = *self.stakes.get(&tx.sender).unwrap_or(&0);
+             let current_stake = self.get_stake(&tx.sender);
              if current_stake >= tx.amount {
                   if let Some(new_stake) = current_stake.checked_sub(tx.amount) {
-                      self.stakes.insert(tx.sender.clone(), new_stake);
+                      self.set_stake(&tx.sender, new_stake);
                       
                       // Fix: Lock Unstaked Funds for Maturity (Prevent Flash Attacks)
                       // User Request: Reduced to 10 blocks (~10 mins)
@@ -207,12 +244,12 @@ impl ChainState {
         }
 
         if tx.tx_type == TxType::IssueToken {
-            self.tokens.insert(tx.token.clone(), tx.sender.clone());
+            // self.tokens.insert(tx.token.clone(), tx.sender.clone()); // Tokens tree implementation deferred
         }
         
         // Nonce
         if tx.sender != "SYSTEM" {
-            self.nonces.insert(tx.sender.clone(), tx.nonce);
+             self.set_nonce(&tx.sender, tx.nonce);
         }
         true
     }
@@ -223,19 +260,21 @@ pub struct Blockchain {
     pub pending_transactions: Vec<Transaction>,
     pub difficulty: u32,
     pub state: ChainState,
-    pub db: Option<Database>, 
+    pub db: Option<Arc<Database>>, 
 }
 
 impl Blockchain {
     pub fn new() -> Self {
+        let db = Database::new("volt.db").ok().map(Arc::new);
+        
         let mut blockchain = Blockchain {
             chain: Vec::new(),
             pending_transactions: Vec::new(),
             // Standard Difficulty (Difficulty 1)
             // This is the correct setting for a Mainnet-like environment.
             difficulty: 0x1d00ffff,
-            state: ChainState::new(),
-            db: Database::new("volt.db").ok(), 
+            state: ChainState::new(db.clone()),
+            db, 
         };
 
         let mut wipe_db = false;
@@ -1025,7 +1064,7 @@ impl Blockchain {
 
          // 1. Verify Claimed Stake
          let miner_addr = block.transactions[0].receiver.clone(); // Coinbase receiver is the miner
-         let actual_stake = *self.state.stakes.get(&miner_addr).unwrap_or(&0);
+         let actual_stake = self.get_stake(&miner_addr);
          if block.validator_stake > actual_stake {
              println!("[Hybrid] Invalid Stake Claim: Claimed {}, Actual {}", block.validator_stake, actual_stake);
              return false;

@@ -535,12 +535,12 @@ fn handle_request(
                 let mut chain = blockchain.lock().unwrap();
              
                 // Check if already exists
-                if chain.state.tokens.contains_key(&token_name) {
+                if chain.state.token_exists(&token_name) {
                      return ApiResponse { status: "error".to_string(), message: "Token already exists".to_string(), data: None };
                 }
 
                 // Fetch Nonce
-                let current_nonce = *chain.state.nonces.get(&wallet.get_address()).unwrap_or(&0);
+                let current_nonce = chain.state.get_nonce(&wallet.get_address());
                 let next_nonce = current_nonce + 1;
                 
                 let mut tx = Transaction::new_token_issue(
@@ -575,7 +575,7 @@ fn handle_request(
                 let mut chain = blockchain.lock().unwrap();
                 
                 // Fetch Nonce
-                let current_nonce = *chain.state.nonces.get(&wallet.get_address()).unwrap_or(&0);
+                let current_nonce = chain.state.get_nonce(&wallet.get_address());
                 let next_nonce = current_nonce + 1;
                 
                 let mut tx = Transaction::new_burn(

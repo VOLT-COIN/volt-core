@@ -51,6 +51,13 @@ impl Database {
         self.db.open_tree("miner_ledger")
     }
 
+    // --- State Trees (Replacing RAM HashMaps) ---
+    pub fn state_balances(&self) -> sled::Result<sled::Tree> { self.db.open_tree("state_balances") }
+    pub fn state_nonces(&self) -> sled::Result<sled::Tree> { self.db.open_tree("state_nonces") }
+    pub fn state_stakes(&self) -> sled::Result<sled::Tree> { self.db.open_tree("state_stakes") }
+    pub fn state_orders(&self) -> sled::Result<sled::Tree> { self.db.open_tree("state_orders") }
+    pub fn state_tokens(&self) -> sled::Result<sled::Tree> { self.db.open_tree("state_tokens") }
+
     pub fn save_block(&self, block: &Block) -> sled::Result<()> {
         let blocks = self.blocks()?;
         let txs = self.txs()?;
