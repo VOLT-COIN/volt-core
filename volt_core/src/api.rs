@@ -495,30 +495,29 @@ fn handle_request(
                 // wallet_lock is already held
                 let mut chain = blockchain.lock().unwrap();
                 
-                // let msg = format!("{}{}{}", wallet.get_address(), to, amount);
-                // let signature = wallet.sign(&msg);
-                
-                // Fetch Nonce
-                let current_nonce = chain.state.get_nonce(&wallet.get_address());
+                // Fetch Nonce (Use existing lock)
+                let sender_addr = wallet_lock.get_address();
+                let current_nonce = chain.state.get_nonce(&sender_addr);
                 let next_nonce = current_nonce + 1;
                 
-                // Calculate Fee (0.1% default if not provided)
+                // ... (Fee calc ...)
                 let final_fee = req.fee.unwrap_or_else(|| {
                      let calc = amount / 1000; // 0.1%
                      if calc < 100_000 { 100_000 } else { calc }
                 });
 
                 let mut tx = Transaction::new(
-                    wallet.get_address(),
+                    sender_addr,
                     to,
                     amount,
                     "VLT".to_string(),
                     next_nonce,
                     final_fee
                 );
-                // tx.fee = final_fee; // Logic moved to constructor
                 
-                tx.sign(wallet.private_key.as_ref().unwrap());
+                if let Some(pk) = &wallet_lock.private_key {
+                   tx.sign(pk);
+                }
                 
                 chain.pending_transactions.push(tx);
                 chain.save(); 
@@ -550,18 +549,22 @@ fn handle_request(
                      return ApiResponse { status: "error".to_string(), message: "Token already exists".to_string(), data: None };
                 }
 
-                // Fetch Nonce
-                let current_nonce = chain.state.get_nonce(&wallet.get_address());
+                // Fetch Nonce (Use existing lock)
+                let sender_addr = wallet_lock.get_address();
+                let current_nonce = chain.state.get_nonce(&sender_addr);
                 let next_nonce = current_nonce + 1;
                 
                 let mut tx = Transaction::new_token_issue(
-                    wallet.get_address(),
+                    sender_addr,
                     token_name,
                     supply,
                     next_nonce
                 );
                 
-                tx.sign(wallet.private_key.as_ref().unwrap());
+                if let Some(pk) = &wallet_lock.private_key {
+                   tx.sign(pk);
+                }
+
                 chain.pending_transactions.push(tx);
                 chain.save(); 
                 
@@ -586,17 +589,21 @@ fn handle_request(
                 let mut chain = blockchain.lock().unwrap();
                 
                 // Fetch Nonce
-                let current_nonce = chain.state.get_nonce(&wallet.get_address());
+                let sender_addr = wallet_lock.get_address();
+                let current_nonce = chain.state.get_nonce(&sender_addr);
                 let next_nonce = current_nonce + 1;
                 
                 let mut tx = Transaction::new_burn(
-                    wallet.get_address(),
+                    sender_addr,
                     token_name,
                     amount,
                     next_nonce
                 );
                 
-                tx.sign(wallet.private_key.as_ref().unwrap());
+                if let Some(pk) = &wallet_lock.private_key {
+                    tx.sign(pk);
+                }
+
                 chain.pending_transactions.push(tx);
                 chain.save(); 
                 
@@ -659,7 +666,12 @@ fn handle_request(
                  let next_nonce = current_nonce + 1;
 
                  let mut tx = Transaction::new_stake(sender, amt, next_nonce);
-                 tx.sign(wallet.private_key.as_ref().unwrap());
+                 {
+                     let w_guard = wallet.lock().unwrap();
+                     if let Some(pk) = &w_guard.private_key {
+                        tx.sign(pk);
+                     }
+                 }
                  
                  if chain.create_transaction(tx) {
                      chain.save();
@@ -685,7 +697,12 @@ fn handle_request(
                  let next_nonce = current_nonce + 1;
 
                  let mut tx = Transaction::new_unstake(sender, amt, next_nonce);
-                 tx.sign(wallet.private_key.as_ref().unwrap());
+                 {
+                     let w_guard = wallet.lock().unwrap();
+                     if let Some(pk) = &w_guard.private_key {
+                        tx.sign(pk);
+                     }
+                 }
                  
                  if chain.create_transaction(tx) {
                      chain.save();
@@ -714,7 +731,12 @@ fn handle_request(
                  let next_nonce = current_nonce + 1;
                  
                  let mut tx = Transaction::new_order(sender, token, &side, amount, price, next_nonce);
-                 tx.sign(wallet.private_key.as_ref().unwrap());
+                 {
+                     let w_guard = wallet.lock().unwrap();
+                     if let Some(pk) = &w_guard.private_key {
+                        tx.sign(pk);
+                     }
+                 }
                  
                  if chain.create_transaction(tx) {
                      chain.save();
@@ -740,7 +762,12 @@ fn handle_request(
                  let next_nonce = current_nonce + 1;
                  
                  let mut tx = Transaction::new_cancel(sender, id, next_nonce);
-                 tx.sign(wallet.private_key.as_ref().unwrap());
+                 {
+                     let w_guard = wallet.lock().unwrap();
+                     if let Some(pk) = &w_guard.private_key {
+                        tx.sign(pk);
+                     }
+                 }
                  
                  // Check if order exists before sending tx? No, chain validation handles it.
                  chain.pending_transactions.push(tx); // bypass strict create_transaction for now or use it if updated

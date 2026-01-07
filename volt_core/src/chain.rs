@@ -334,7 +334,8 @@ impl Blockchain {
 
         let mut wipe_db = false;
 
-        if let Some(ref db) = blockchain.db {
+        // Clone DB reference to avoid borrow conflict with mutable `create_genesis_block`
+        if let Some(db) = blockchain.db.clone() {
             // Load Tip
             match db.get_last_block() {
                 Ok(Some(last_block)) => {
@@ -1337,7 +1338,7 @@ impl Blockchain {
                   return false;
              }
          }
-         self.tip = Some(block); // Update In-Memory Tip
+         self.tip = Some(block.clone()); // Update In-Memory Tip
          
          // Fix: Remove confirmed transactions from pending pool to prevent replay/stuck
          let confirmed: HashSet<Vec<u8>> = block.transactions.iter().map(|tx| tx.get_hash()).collect();
