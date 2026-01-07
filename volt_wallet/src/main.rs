@@ -53,8 +53,7 @@ fn configure_theme(ctx: &egui::Context) {
 // Helper to load icon for Window Titlebar
 // Helper to load icon for Window Titlebar
 fn load_icon() -> egui::IconData {
-    let (icon_rgba, icon_width, icon_height) = {
-        let image = image::load_from_memory(include_bytes!("../../app_icon.png"))
+        let image = image::load_from_memory(include_bytes!("../app_icon.png"))
             .expect("Failed to load icon")
             .into_rgba8();
         let (width, height) = image.dimensions();
@@ -357,7 +356,7 @@ impl WalletApp {
         
         // Load Logo Texture
         let logo_texture = {
-            let image = image::load_from_memory(include_bytes!("../../app_icon.png")).unwrap().to_rgba8();
+            let image = image::load_from_memory(include_bytes!("../app_icon.png")).unwrap().to_rgba8();
             let size = [image.width() as usize, image.height() as usize];
             let pixels = image.into_raw();
             let color_image = egui::ColorImage::from_rgba_unmultiplied(size, &pixels);
