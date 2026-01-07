@@ -1,9 +1,7 @@
 /target
-**/*.zip
 **/target/
 volt_core/target/
 volt_wallet/target/
-target/
 **/*.exe
 **/*.dll
 **/*.rlib

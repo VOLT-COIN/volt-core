@@ -13,6 +13,7 @@ pub enum Message {
     NewBlock(Block),
     NewTransaction(Transaction),
     GetChain,
+    GetBlocks { start: usize, limit: usize },
     Chain(Vec<Block>),
     GetPeers,
     Peers(Vec<String>),
@@ -110,17 +111,40 @@ impl Node {
                                         Ok(None)
                                     },
                                     Message::GetChain => {
-                                        println!("[P2P] Received Chain Request");
+                                        println!("[P2P] Received Chain Request (Full)");
                                         let chain = chain_inner.lock().unwrap();
                                         let msg_resp = Message::Chain(chain.chain.clone());
                                         drop(chain); // Unlock
                                         Ok(Some(msg_resp))
                                     },
+                                    Message::GetBlocks { start, limit } => {
+                                        // println!("[P2P] Received Chunk Request: {} to {}", start, start + limit);
+                                        let chain = chain_inner.lock().unwrap();
+                                        let len = chain.chain.len();
+                                        if start < len {
+                                            let end = std::cmp::min(start + limit, len);
+                                            let chunk = chain.chain[start..end].to_vec();
+                                            let msg_resp = Message::Chain(chunk);
+                                            Ok(Some(msg_resp))
+                                        } else {
+                                            Ok(None) // Start index out of bounds
+                                        }
+                                    },
                                     Message::Chain(remote_chain) => {
-                                        println!("[P2P] Received Chain Data (Height: {})", remote_chain.len());
+                                        // println!("[P2P] Received Chain Data (Count: {})", remote_chain.len());
                                         let mut chain = chain_inner.lock().unwrap();
-                                        if chain.attempt_chain_replacement(remote_chain) {
-                                            println!("[P2P] Chain synchronized successfully.");
+                                        if let Some(first) = remote_chain.first() {
+                                            if first.index == 0 {
+                                                // Full Chain / Reorg Candidate
+                                                if chain.attempt_chain_replacement(remote_chain) {
+                                                    println!("[P2P] Chain replaced/synchronized successfully.");
+                                                }
+                                            } else {
+                                                // Chunk / Append Candidate
+                                                if chain.handle_sync_chunk(remote_chain) {
+                                                    // console log handled inside
+                                                }
+                                            }
                                         }
                                         Ok(None)
                                     },
@@ -222,55 +246,71 @@ impl Node {
 
         thread::spawn(move || {
             loop {
-                thread::sleep(std::time::Duration::from_secs(10)); // Discovery Interval
+                thread::sleep(std::time::Duration::from_secs(4)); // Sync Interval
                 
-                let peers_list = peers_client.lock().unwrap().clone();
-                for peer in peers_list {
-                    // Avoid self-connect
+                // 1. Manage Peers
+                let mut peers_list = peers_client.lock().unwrap().clone();
+                if peers_list.is_empty() { continue; }
+                
+                // 2. Determine Sync Status
+                let chain = chain_client.lock().unwrap();
+                let my_height = chain.chain.len();
+                drop(chain); // Unlock
+
+                // 3. Distributed Sync: Randomly select a peer to request next chunk
+                // This distributes load across the network (Round-Robin / Random)
+                use rand::seq::SliceRandom;
+                let mut rng = rand::thread_rng();
+                if let Some(peer) = peers_list.choose(&mut rng) {
                     if peer.contains(&format!("127.0.0.1:{}", port_client)) { continue; }
                     
+                    let peer_addr = peer.clone();
                     let chain_inner = chain_client.clone();
                     let peers_inner = peers_client.clone();
-                    let peer_addr = peer.clone();
-                    
+
                     thread::spawn(move || {
                         let ws_url = format!("ws://{}", peer_addr);
                         if let Ok((mut socket, _)) = tungstenite::connect(ws_url) {
-                            // Handshake: Send GetPeers + GetChain
+                            // Handshake: GetPeers
                             let _ = socket.send(tungstenite::Message::Text(serde_json::to_string(&Message::GetPeers).unwrap()));
-                            let _ = socket.send(tungstenite::Message::Text(serde_json::to_string(&Message::GetChain).unwrap()));
                             
-                            loop {
-                                if let Ok(msg) = socket.read() { // Changed to read()
+                            // CHUNK REQUEST: Ask for next 500 blocks
+                            let msg = Message::GetBlocks { start: my_height, limit: 500 };
+                             
+                            if let Ok(json) = serde_json::to_string(&msg) {
+                                let _ = socket.send(tungstenite::Message::Text(json));
+                            }
+                            
+                            // Listen for Response (Short lived connection for sync step)
+                            // We wait for a few seconds to receive data then close
+                            socket.get_mut().set_read_timeout(Some(Duration::from_secs(5))).ok();
+                            
+                            let start_time = std::time::Instant::now();
+                            while start_time.elapsed() < Duration::from_secs(5) {
+                                if let Ok(msg) = socket.read() {
                                     if msg.is_text() {
                                         let text = msg.to_text().unwrap_or("{}");
                                         if let Ok(parsed) = serde_json::from_str::<Message>(text) {
-                                            match parsed {
+                                             match parsed {
                                                 Message::Peers(new_p) => {
                                                      let mut p_lock = peers_inner.lock().unwrap();
                                                      for np in new_p {
                                                          if !p_lock.contains(&np) { p_lock.push(np); }
                                                      }
                                                 },
-                                                Message::Chain(remote) => {
+                                                Message::Chain(chunk) => {
                                                      let mut c = chain_inner.lock().unwrap();
-                                                     c.attempt_chain_replacement(remote);
-                                                },
-                                                Message::NewBlock(b) => {
-                                                     let mut c = chain_inner.lock().unwrap();
-                                                     c.submit_block(b);
-                                                },
-                                                Message::NewTransaction(t) => {
-                                                     let mut c = chain_inner.lock().unwrap();
-                                                     c.create_transaction(t);
+                                                     // Reuse the logic: index 0 = Full, index > 0 = Chunk
+                                                     if let Some(first) = chunk.first() {
+                                                         if first.index == 0 { c.attempt_chain_replacement(chunk); }
+                                                         else { c.handle_sync_chunk(chunk); }
+                                                     }
                                                 },
                                                 _ => {}
-                                            }
+                                             }
                                         }
                                     }
-                                } else {
-                                    break;
-                                }
+                                } else { break; }
                             }
                         }
                     });

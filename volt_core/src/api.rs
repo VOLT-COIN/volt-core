@@ -285,7 +285,11 @@ fn handle_request(
             ApiResponse { 
                 status: "success".to_string(), 
                 message: "Recent blocks retrieved".to_string(),
-                data: Some(serde_json::json!({ "count": blocks.len(), "blocks": response_data })) 
+                data: Some(serde_json::json!({ 
+                    "count": blocks.len(), 
+                    "current_height": len,
+                    "blocks": response_data 
+                })) 
             }
         },
         "get_chain_info" => {

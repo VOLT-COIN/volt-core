@@ -1369,6 +1369,32 @@ impl Blockchain {
              Ok(new_state) => {
                  self.chain = candidate;
                  self.state = new_state;
+                 // Persist
+                 let _ = self.save();
+                 true
+             },
+             Err(e) => {
+                 println!("[Consensus] State Verification Failed: {}", e);
+                 false
+             }
+         }
+    }
+
+    // Optimized Sync: Handle Sequence of Blocks without full chain replacement
+    pub fn handle_sync_chunk(&mut self, chunk: Vec<Block>) -> bool {
+        let mut added = 0;
+        for block in chunk {
+            if !self.submit_block(block) {
+                println!("[Sync] Chunk processing stopped at failure. Added {} blocks.", added);
+                return false;
+            }
+            added += 1;
+        }
+        if added > 0 {
+             println!("[Sync] Successfully added {} blocks from chunk.", added);
+        }
+        true
+    }                 self.state = new_state;
                  println!("[Consensus] Chain Replaced and State Rebuilt Successfully.");
              },
              Err(e) => {
