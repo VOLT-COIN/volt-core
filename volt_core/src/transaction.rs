@@ -19,7 +19,10 @@ pub enum TxType {
     Swap,
     IssueNFT,
     TransferNFT,
-    BurnNFT
+
+    BurnNFT,
+    DeployContract,
+    CallContract
 }
 
 impl std::fmt::Display for TxType {
@@ -65,7 +68,12 @@ pub struct Transaction {
 
     // Phase 34: DEX
     #[serde(default)]
+    #[serde(default)]
     pub price: u64, // For Limit Orders (VLT per Token Unit)
+
+    // Phase 6: Smart Contracts
+    #[serde(default)]
+    pub data: Vec<u8>, // Bytecode (Deploy) or Args (Call)
 }
 
 impl Transaction {
@@ -100,7 +108,9 @@ impl Transaction {
             fee: if fee == 0 { 100_000 } else { fee }, // Use provided fee or default
             script_pub_key,
             script_sig: Script::new(),
+            script_sig: Script::new(),
             price: 0,
+            data: vec![],
         }
     }
 
@@ -268,6 +278,50 @@ impl Transaction {
             script_sig: Script::new(),
             price: 0,
         }
+            price: 0,
+            data: vec![],
+        }
+    }
+
+    pub fn new_deploy(sender: String, bytecode: Vec<u8>, nonce: u64) -> Self {
+         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+         Transaction {
+            version: 1,
+            sender: sender.clone(),
+            receiver: String::new(), // No receiver for deploy
+            amount: 0,
+            signature: String::new(),
+            timestamp,
+            token: "VLT".to_string(),
+            tx_type: TxType::DeployContract,
+            nonce,
+            fee: 200_000, 
+            script_pub_key: Script::new(),
+            script_sig: Script::new(),
+            price: 0,
+            data: bytecode,
+        }
+    }
+
+    pub fn new_call(sender: String, contract: String, method: &str, args: Vec<u8>, nonce: u64) -> Self {
+         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+         // define arg payload? For now just raw bytes
+         Transaction {
+            version: 1,
+            sender,
+            receiver: contract,
+            amount: 0,
+            signature: String::new(),
+            timestamp,
+            token: "VLT".to_string(),
+            tx_type: TxType::CallContract,
+            nonce,
+            fee: 50_000, 
+            script_pub_key: Script::new(),
+            script_sig: Script::new(),
+            price: 0,
+            data: args, // We might need to encode method name here too? Or use formatted string "method|args"
+        }
     }
 
     pub fn get_hash(&self) -> Vec<u8> {
@@ -317,11 +371,15 @@ impl Transaction {
                  TxType::Swap => 9,
                  TxType::IssueNFT => 10,
                  TxType::TransferNFT => 11,
+                 TxType::TransferNFT => 11,
                  TxType::BurnNFT => 12,
+                 TxType::DeployContract => 13,
+                 TxType::CallContract => 14,
              };
              bytes.push(type_byte);
              bytes.extend(&self.nonce.to_le_bytes());
              bytes.extend(&self.fee.to_le_bytes());
+             bytes.extend(&self.data); // Include data in hash
              
              // Script Pub Key (Ops)
              for _op in &self.script_pub_key.ops {

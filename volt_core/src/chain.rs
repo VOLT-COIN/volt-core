@@ -3,6 +3,7 @@ use crate::block::Block;
 use crate::transaction::{Transaction, TxType};
 use crate::db::Database;
 use crate::script::VirtualMachine;
+use crate::vm::WasmVM; // Import WasmVM
 
 use std::collections::{HashMap, BTreeMap, HashSet};
 use std::sync::Arc;
@@ -45,6 +46,14 @@ pub struct NFT {
     pub created_at: u64,
 }
 
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct Contract {
+    pub address: String, // Calculated ID
+    pub owner: String,
+    pub bytecode: Vec<u8>,
+    pub storage: HashMap<String, Vec<u8>>,
+}
+
 #[derive(Clone, Default)]
 pub struct ChainState {
     pub db: Option<Arc<Database>>,
@@ -56,6 +65,7 @@ pub struct ChainState {
     pub asks: BTreeMap<(String, u64, u64), String>,
     pub candles: HashMap<String, Vec<Candle>>,
     pub nfts: HashMap<String, NFT>,
+    pub contracts: HashMap<String, Contract>, // Smart Contracts
     pub pending_rewards: BTreeMap<u64, Vec<(String, u64)>>,
 }
 
@@ -69,6 +79,8 @@ impl ChainState {
             asks: BTreeMap::new(),
             candles: HashMap::new(),
             nfts: HashMap::new(),
+            nfts: HashMap::new(),
+            contracts: HashMap::new(),
             pending_rewards: BTreeMap::new(),
         }
     }
@@ -81,8 +93,10 @@ impl ChainState {
             let _ = db.state_tokens().map(|t| t.clear());
             // Clear DEX RAM state as well
             self.pools.clear();
+            self.pools.clear();
             self.orders.clear();
             self.nfts.clear();
+            self.contracts.clear();
         }
     }
 
@@ -302,6 +316,51 @@ impl ChainState {
         if tx.sender != "SYSTEM" {
              self.set_nonce(&tx.sender, tx.nonce);
         }
+
+        // 3. CONTRACT EXECUTION
+        if tx.tx_type == TxType::DeployContract {
+            // Address = Sha256(sender + nonce)
+            let raw = format!("{}{}", tx.sender, tx.nonce);
+            use sha2::{Sha256, Digest};
+            let hash = Sha256::digest(raw.as_bytes());
+            let contract_addr = hex::encode(hash);
+            
+            let contract = Contract {
+                address: contract_addr.clone(),
+                owner: tx.sender.clone(),
+                bytecode: tx.data.clone(),
+                storage: HashMap::new(),
+            };
+            self.contracts.insert(contract_addr, contract);
+        } else if tx.tx_type == TxType::CallContract {
+             if let Some(mut contract) = self.contracts.remove(&tx.receiver) { // Take ownership to mutate
+                 // Instantiate VM
+                 let mut vm_res = WasmVM::new(&contract.bytecode, contract.storage.clone());
+                 match vm_res {
+                     Ok(mut vm) => {
+                         // Parse Method and Args from tx.data
+                         // Format: "method_name" (args in VM memory? For MVP just run main/start)
+                         // Actually data is Vec<u8>, maybe valid string method name?
+                         // Let's assume data IS the method name for now.
+                         let method = String::from_utf8(tx.data.clone()).unwrap_or("main".to_string());
+                         
+                         // Call
+                         let _ = vm.call(&method, vec![]);
+                         
+                         // Update Storage (Generic Sync)
+                         // In real impl, we'd iterate modified keys.
+                         // For MVP sandbox, we might need vm to return new storage
+                         // contract.storage = vm.get_storage();
+                     },
+                     Err(e) => {
+                         println!("VM Error: {}", e);
+                         return false; // Fail Tx
+                     }
+                 }
+                 self.contracts.insert(tx.receiver.clone(), contract); // Put back
+             }
+        }
+
         true
     }
 

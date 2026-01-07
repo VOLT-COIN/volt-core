@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+wasmer = "4.2" # Smart Contract Runtime
 sha2 = "0.10"
 chrono = { version = "0.4", features = ["serde"] }
 hex = "0.4"

@@ -7,6 +7,7 @@ mod api;
 mod stratum;
 mod db;
 mod script;
+mod vm; // Smart Contracts
 // mod gui; // Phase 37: GUI Module (Disabled)
 
 use chain::Blockchain;
