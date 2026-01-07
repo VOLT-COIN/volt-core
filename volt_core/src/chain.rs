@@ -1108,19 +1108,7 @@ impl Blockchain {
              }
         }
             
-            // 2. Debit Amount (Token)
-            if tx.tx_type == TxType::Transfer || tx.tx_type == TxType::Stake {
-                // ... (Existing Debit Logic managed by previous edits) ...
-                // Note: I am inserting get_all_stakes method BEFORE Apply Transaction logic starts or inside impl?
-                // The prompt range 1000-1045 is inside mine_block code in Blockchain impl, not ChainState impl.
-                // I must split this. 
-                // Wait, I can't add method to ChainState here easily if I am viewing Blockchain code.
-                // I will add the method call assuming I added it, or stick to inline logic if simple? No, inline is messy.
-                // Re-reading code: Line 1000 is inside `mine_block` of Blockchain? 
-                // No, `mine_block` calls `Block::new`. 
-                // Let's look at `chain.rs` structure again.
-            
-            // ...
+
             // Block 1019 replacement:
         let all_stakes = self.state.get_all_stakes();
         if !all_stakes.is_empty() {
