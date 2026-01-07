@@ -149,7 +149,6 @@ struct WalletApp {
     history: Vec<Value>,
     recent_blocks: Vec<Value>,
     send_recipient: String,
-    send_recipient: String,
     send_amount: String,
     send_fee_tier: FeeTier, // New Field
     send_fee_input: String, // Kept for Custom
@@ -197,8 +196,6 @@ enum GuiMessage {
         block_height: u64,
         pending_txs: u64,
         is_locked: bool,
-
-        is_locked: bool,
         is_initialized: bool,
 
         assets: HashMap<String, i64>,
@@ -210,8 +207,6 @@ enum GuiMessage {
 enum BgMessage {
     SendTransaction { recipient: String, amount: f64, fee: u64, token: String },
     EncryptWallet(String),
-    UnlockWallet(String),
-    LockWallet,
     UnlockWallet(String),
     LockWallet,
     GetMnemonic,
@@ -420,7 +415,6 @@ impl WalletApp {
             status: "Connecting...".to_string(),
             block_height: 0,
             pending_txs: 0,
-            pending_txs: 0,
             is_locked: false,
             is_initialized: true,
             unlock_password: String::new(),
@@ -428,7 +422,6 @@ impl WalletApp {
             setup_password: String::new(),
             history: vec![],
             recent_blocks: vec![],
-            send_recipient: String::new(),
             send_recipient: String::new(),
             send_amount: String::new(),
             send_fee_tier: FeeTier::Standard, // Default
