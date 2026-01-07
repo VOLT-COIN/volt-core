@@ -1,11 +1,8 @@
-use std::env;
-use std::path::Path;
-
 fn main() {
     #[cfg(target_os = "windows")]
     {
-        let dir = env::var("CARGO_MANIFEST_DIR").unwrap();
-        let res_path = Path::new(&dir).join("resources.o");
-        println!("cargo:rustc-link-arg={}", res_path.display());
+        let mut res = winres::WindowsResource::new();
+        res.set_icon("app_icon.ico");
+        res.compile().unwrap();
     }
 }
