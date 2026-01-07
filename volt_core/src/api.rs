@@ -480,8 +480,7 @@ fn handle_request(
                 ApiResponse { status: "error".to_string(), message: "Missing active param".to_string(), data: None }
             }
         },
-        "send_transaction" => {
-            println!("[API] Received send_transaction request from GUI.");
+
         "send_transaction" => {
             println!("[API] Received send_transaction request from GUI.");
             let mut wallet_lock = wallet.lock().unwrap(); // Lock strictly for modification check

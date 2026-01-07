@@ -301,6 +301,7 @@ impl ChainState {
         }
         true
     }
+    }
 }
 
 pub struct Blockchain {
@@ -352,6 +353,30 @@ impl Blockchain {
             }
         }
         
+        
+        if wipe_db {
+             // 1. Drop the DB connection to release file locks
+             blockchain.db = None;
+             
+             // 2. Delete the DB directory
+             let path = std::path::Path::new("volt.db");
+             if path.exists() {
+                 if let Err(e) = std::fs::remove_dir_all(path) {
+                     println!("[Auto-Wipe] Failed to delete volt.db: {}", e);
+                     // If we can't delete, we panic because we can't run safely
+                     panic!("Cannot auto-wipe database. Please delete 'volt.db' manually.");
+                 } else {
+                     println!("[Auto-Wipe] Database deleted successfully.");
+                 }
+             }
+             
+             // 3. Re-initialize DB
+             blockchain.db = Database::new("volt.db").ok();
+             
+             // 4. Create correct Genesis
+             blockchain.create_genesis_block();
+        }
+
         blockchain
     }
 
@@ -380,34 +405,9 @@ impl Blockchain {
          } else {
              None
          }
-    }         blockchain.create_genesis_block();
-        }
-
-        if wipe_db {
-             // 1. Drop the DB connection to release file locks
-             blockchain.db = None;
-             
-             // 2. Delete the DB directory
-             let path = std::path::Path::new("volt.db");
-             if path.exists() {
-                 if let Err(e) = std::fs::remove_dir_all(path) {
-                     println!("[Auto-Wipe] Failed to delete volt.db: {}", e);
-                     // If we can't delete, we panic because we can't run safely
-                     panic!("Cannot auto-wipe database. Please delete 'volt.db' manually.");
-                 } else {
-                     println!("[Auto-Wipe] Database deleted successfully.");
-                 }
-             }
-             
-             // 3. Re-initialize DB
-             blockchain.db = Database::new("volt.db").ok();
-             
-             // 4. Create correct Genesis
-             blockchain.create_genesis_block();
-        }
-
-        blockchain
     }
+
+
 
     pub fn rebuild_state(&mut self) {
         let height = self.get_height();

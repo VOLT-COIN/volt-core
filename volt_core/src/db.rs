@@ -172,10 +172,7 @@ impl Database {
             Ok(None)
         }
     }
-        } else {
-            Ok(None)
-        }
-    }
+
     
     pub fn get_all_blocks(&self) -> sled::Result<Vec<Block>> {
         let blocks = self.blocks()?;
