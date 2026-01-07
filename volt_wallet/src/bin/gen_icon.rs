@@ -1,7 +1,7 @@
 use std::path::Path;
 
 fn main() {
-    let src_path = "C:\\Users\\shando\\coin_project\\volt_wallet\\assets\\logo.png";
+    let src_path = "C:\\Users\\shando\\coin_project\\volt_wallet\\src\\logo.png";
     let dest_path = "C:\\Users\\shando\\coin_project\\volt_wallet\\app_icon.ico";
     
     println!("Opening image from: {}", src_path);
