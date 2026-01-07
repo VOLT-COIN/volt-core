@@ -484,7 +484,7 @@ fn handle_request(
 
         "send_transaction" => {
             println!("[API] Received send_transaction request from GUI.");
-            let mut wallet_lock = wallet.lock().unwrap(); // Lock strictly for modification check
+            let wallet_lock = wallet.lock().unwrap(); // Lock strictly for modification check
              if wallet_lock.is_locked {
                  println!("[API] Failed: Wallet is LOCKED.");
                  return ApiResponse { status: "error".to_string(), message: "WALLET LOCKED".to_string(), data: None };
@@ -815,7 +815,7 @@ fn handle_request(
                  // Convert to JSON including TX count
                  // We need to clone specific fields or return full block
                  // Returning full block structure via serde
-                 let mut b_json = serde_json::to_value(b).unwrap();
+                 let mut b_json = serde_json::to_value(&b).unwrap();
                  b_json["tx_count"] = serde_json::json!(b.transactions.len());
                  // Pre-calculate TXS with simplified view or full?
                  // Frontend expects 'txs' array probably.
@@ -882,7 +882,7 @@ fn handle_request(
         "get_recent_txs" => {
             let chain = blockchain.lock().unwrap();
             let mut txs = Vec::new();
-            let limit = 50; // max txs to return
+            let _limit = 50; // max txs to return
 
             // Iterate backwards through blocks
             let height = chain.get_height();

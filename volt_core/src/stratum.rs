@@ -70,7 +70,7 @@ impl StratumServer {
             
             for stream in listener.incoming() {
                 match stream {
-                    Ok(mut stream) => {
+                    Ok(stream) => {
                         let chain = chain_ref.clone();
                         let mode = mode_ref.clone();
                         let shares = shares_ref.clone();

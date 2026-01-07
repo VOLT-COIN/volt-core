@@ -82,7 +82,7 @@ impl Node {
 
             for stream in listener.incoming() {
                 match stream {
-                    Ok(mut stream) => { 
+                    Ok(stream) => { 
                         let chain_inner = chain_ref.clone();
                         let peers_inner = peers_ref.clone();
                         let banned_inner = banned_ref.clone();
@@ -304,7 +304,7 @@ impl Node {
                 thread::sleep(std::time::Duration::from_secs(4)); // Sync Interval
                 
                 // 1. Manage Peers
-                let mut peers_list = peers_client.lock().unwrap().clone();
+                let peers_list = peers_client.lock().unwrap().clone();
                 if peers_list.is_empty() { continue; }
                 
                 // 2. Determine Sync Status
