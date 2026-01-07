@@ -304,7 +304,7 @@ impl ChainState {
         }
         true
     }
-    }
+
 }
 
 pub struct Blockchain {
