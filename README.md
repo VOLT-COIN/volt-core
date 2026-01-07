@@ -13,13 +13,37 @@ Volt is a next-generation Hybrid Proof-of-Work (PoW) / Proof-of-Stake (PoS) cryp
 *   **Hybrid Consensus**: Combines PoW mining (CPU/Argon2-like) with PoS validation (Staking) for 51% attack resistance.
 *   **Dynamic Difficulty**: Custom retargeting algorithm adjusts seamlessly to network hashrate fluctuations.
 *   **Deflationary Supply**: Verified capped supply (~105M VLT) with scheduled halvings.
+*   **Native Assets**: Built-in support for Token Issuance, NFTs, and a Decentralized Exchange (DEX) at the protocol level.
 
 ### 💼 Volt Wallet (GUI)
 *   **Modern Dashboard**: Built with `egui` for a responsive, high-performance interface.
 *   **Setup Wizard**: User-friendly flow for creating new HD wallets or importing existing seed phrases.
-*   **Secure Unlocking**: requires password authentication for all sensitive actions (Transfer, Stake, etc.).
+*   **Secure Unlocking**: Requires password authentication for all sensitive actions (Transfer, Stake, etc.).
 *   **Advanced Fee Market**: Select from **Eco**, **Standard**, or **Fast** transaction fees.
 *   **Visual Explorer**: Built-in block explorer and transaction history.
+
+## 🗺️ Roadmap
+
+The following updates are planned for the next development phase:
+
+1.  **Smart Contract Support (Wasm/EVM)**: 
+    *   Integration of WebAssembly or EVM to enable complex Decentralized Applications (DApps).
+    *   This is the foundation for building true **Layer 2** scaling solutions.
+
+2.  **Advanced P2P Network (Kademlia DHT)**:
+    *   Transitioning from the current flooding mechanism to a Kademlia Distributed Hash Table (DHT).
+    *   Ensures faster peer discovery, lower latency, and high resistance to censorship.
+
+3.  **GUI Wallet V2 (DEX & Asset UI)**:
+    *   A major interface overhaul to expose the core's native capabilities.
+    *   **Features**: Visual Token Manager, NFT Gallery, and a one-click Interface for the built-in Decentralized Exchange.
+
+4.  **Mobile Wallet (SPV)**:
+    *   Development of a lightweight mobile client using Simplified Payment Verification (SPV).
+    *   Allows secure usage on mobile devices without downloading the full blockchain.
+
+5.  **Explorer V2**:
+    *   Enhanced block explorer with Rich Lists, Token Analytics, and Network Health metrics.
 
 ## 📦 Components
 
