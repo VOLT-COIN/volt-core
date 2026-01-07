@@ -115,6 +115,7 @@ enum Tab {
     Contacts,
     Assets,
     Staking,
+    Exchange,
     Settings,
 }
 
@@ -184,6 +185,14 @@ struct WalletApp {
     peers: usize,
     settings_tab: SettingsTab,
     node_url_input: String,
+
+    // DEX V2
+    market_pair: String, // e.g. "VLT/USDT"
+    order_side: String, // "BUY" or "SELL"
+    order_price: String,
+    order_amount: String,
+    order_book: Vec<Value>, 
+    my_orders: Vec<Value>,
 }
 
 enum GuiMessage {
@@ -200,6 +209,7 @@ enum GuiMessage {
 
         assets: HashMap<String, i64>,
         peers: usize,
+        orders: Vec<Value>, // DEX Data
     },
     ShowMnemonic(String),
 }
@@ -216,6 +226,10 @@ enum BgMessage {
     Stake(u64),
     Unstake(u64),
     SetNodeUrl(String),
+    // DEX
+    PlaceOrder { token: String, side: String, price: f64, amount: f64 },
+    CancelOrder(String), // Order ID (token)
+    GetOrders,
 }
 
 impl WalletApp {
@@ -294,6 +308,18 @@ impl WalletApp {
                              let params = serde_json::json!({ "amount": amount });
                              let _ = client.call("unstake", Some(params));
                         },
+                        // DEX Handler
+                        BgMessage::PlaceOrder { token, side, price, amount } => {
+                            let params = serde_json::json!({ "token": token, "side": side, "price": price, "amount": amount });
+                            let _ = client.call("place_order", Some(params));
+                        },
+                        BgMessage::CancelOrder(id) => {
+                            let params = serde_json::json!({ "token": id }); // ID passed as token field for now
+                            let _ = client.call("cancel_order", Some(params)); 
+                        },
+                        BgMessage::GetOrders => {
+                            // Handled in Poll loop typically, or manual refresh
+                        },
                         BgMessage::SetNodeUrl(url) => {
                              client = RpcClient::new(&url);
                         }
@@ -313,6 +339,7 @@ impl WalletApp {
                 
                 let mut history_vec = Vec::new();
                 let mut blocks_vec = Vec::new();
+                let mut orders_vec = Vec::new(); // DEX
 
                 let mut assets_map = HashMap::new();
                 let mut peers_count = 0;
@@ -367,6 +394,15 @@ impl WalletApp {
                          balance = "---".to_string();
                      }
 
+                     // Poll Orders
+                     if let Ok(res) = client.call("get_orders", None) {
+                         if let Some(data) = res.data {
+                             if let Some(o) = data.get("orders") {
+                                 if let Some(arr) = o.as_array() { orders_vec = arr.clone(); }
+                             }
+                         }
+                     }
+
                      if let Ok(res) = client.call("get_blocks", Some(serde_json::json!({}))) {
                          if let Some(data) = res.data {
                              if let Some(b) = data.get("blocks") {
@@ -387,7 +423,8 @@ impl WalletApp {
 
                 tx_gui.send(GuiMessage::UpdateData { 
                     balance, address, history: history_vec, blocks: blocks_vec,
-                    status, block_height, pending_txs, is_locked, is_initialized, assets: assets_map, peers: peers_count
+                    status, block_height, pending_txs, is_locked, is_initialized, assets: assets_map, peers: peers_count,
+                    orders: orders_vec
                 }).ok();
                 thread::sleep(Duration::from_secs(1));
             }
@@ -440,6 +477,12 @@ impl WalletApp {
             stake_amount: String::new(),
             settings_tab: SettingsTab::Connection,
             node_url_input: "127.0.0.1:7862".to_string(),
+            market_pair: "VLT/USDT".to_string(), // Default view
+            order_side: "BUY".to_string(),
+            order_price: String::new(),
+            order_amount: String::new(),
+            order_book: vec![],
+            my_orders: vec![],
             rx: rx_gui,
             tx: tx_bg,
             last_heartbeat: Instant::now(),
@@ -484,7 +527,7 @@ impl eframe::App for WalletApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         while let Ok(msg) = self.rx.try_recv() {
              match msg {
-                GuiMessage::UpdateData { balance, address, history, blocks, status, block_height, pending_txs, is_locked, is_initialized, assets, peers } => {
+                GuiMessage::UpdateData { balance, address, history, blocks, status, block_height, pending_txs, is_locked, is_initialized, assets, peers, orders } => {
                     if self.address != address { self.qr_texture = None; }
                     self.balance = balance;
                     self.address = address;
@@ -493,11 +536,11 @@ impl eframe::App for WalletApp {
                     self.status = status;
                     self.block_height = block_height;
                     self.pending_txs = pending_txs;
-                    self.pending_txs = pending_txs;
                     self.is_locked = is_locked;
                     self.is_initialized = is_initialized;
                     self.assets = assets;
                     self.peers = peers;
+                    self.order_book = orders; // Sync OrderBook
                     self.last_heartbeat = Instant::now();
 
                     // Auto-close sync window on first connection
@@ -540,6 +583,7 @@ impl eframe::App for WalletApp {
                     ("📥 Receive", Tab::Receive),
                     ("👥 Contacts", Tab::Contacts),
                     ("💎 Assets", Tab::Assets),
+                    ("📊 Exchange", Tab::Exchange),
                     ("🔒 Staking", Tab::Staking),
                 ];
                 
@@ -1135,6 +1179,105 @@ impl eframe::App for WalletApp {
                      
                      ui.add_space(20.0);
                      ui.label(egui::RichText::new("Note: Unstaking returns funds after verification.").color(COL_SUBTEXT).size(12.0));
+                },
+
+                Tab::Exchange => {
+                     ui.horizontal(|ui| {
+                         ui.heading("DeFi Exchange");
+                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                             ui.label(egui::RichText::new(&self.market_pair).strong().color(COL_ACCENT).size(18.0));
+                         });
+                     });
+                     ui.separator();
+                     ui.add_space(10.0);
+
+                     ui.columns(2, |cols| {
+                         // Left: Order Form
+                         cols[0].vertical(|ui| {
+                             egui::Frame::none().fill(COL_CARD).rounding(8.0).inner_margin(15.0).show(ui, |ui| {
+                                 ui.horizontal(|ui| {
+                                     if ui.selectable_label(self.order_side == "BUY", "BUY").clicked() { self.order_side = "BUY".to_string(); }
+                                     if ui.selectable_label(self.order_side == "SELL", "SELL").clicked() { self.order_side = "SELL".to_string(); }
+                                 });
+                                 ui.add_space(10.0);
+                                 
+                                 ui.label("Price (VLT):");
+                                 ui.add(egui::TextEdit::singleline(&mut self.order_price).desired_width(150.0));
+                                 ui.add_space(5.0);
+                                 
+                                 ui.label("Amount (Tokens):");
+                                 ui.add(egui::TextEdit::singleline(&mut self.order_amount).desired_width(150.0));
+                                 ui.add_space(15.0);
+                                 
+                                 // Calc Total
+                                 let p = self.order_price.parse::<f64>().unwrap_or(0.0);
+                                 let a = self.order_amount.parse::<f64>().unwrap_or(0.0);
+                                 ui.label(format!("Total: {:.6} VLT", p * a));
+                                 
+                                 ui.add_space(15.0);
+                                 let btn_color = if self.order_side == "BUY" { COL_SUCCESS } else { COL_DANGER };
+                                 if ui.add(egui::Button::new(format!("{} {}", self.order_side, "TOKEN")).fill(btn_color).min_size(egui::vec2(150.0, 40.0))).clicked() {
+                                     if p > 0.0 && a > 0.0 {
+                                         let token = if self.market_pair == "VLT/USDT" { "USDT".to_string() } else { "TOKEN".to_string() };
+                                         let price_atomic = (p * 100_000_000.0) as u64; // Price per unit
+                                         let amount_atomic = (a * 100_000_000.0) as u64; 
+                                         
+                                         self.tx.send(BgMessage::PlaceOrder {
+                                             token,
+                                             side: self.order_side.clone(),
+                                              price: price_atomic as f64,
+                                             amount: amount_atomic as f64
+                                         }).unwrap();
+                                     }
+                                 }
+                             });
+                         });
+
+                         // Right: Order Book
+                         cols[1].vertical(|ui| {
+                             ui.label(egui::RichText::new("Order Book").strong());
+                             egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+                                 ui.horizontal(|ui| {
+                                     ui.label("Price");
+                                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| { ui.label("Amount"); });
+                                 });
+                                 ui.separator();
+                                 
+                                 for o in &self.order_book {
+                                     let side = o["side"].as_str().unwrap_or("?");
+                                     let price = o["price"].as_u64().unwrap_or(0) as f64 / 100_000_000.0;
+                                     let amount = o["amount"].as_u64().unwrap_or(0) as f64 / 100_000_000.0;
+                                     let creator = o["creator"].as_str().unwrap_or("");
+                                     let is_mine = creator == self.address;
+
+                                     ui.horizontal(|ui| {
+                                         let color = if side == "BUY" { COL_SUCCESS } else { COL_DANGER };
+                                         ui.label(egui::RichText::new(format!("{:.4}", price)).color(color));
+                                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                             if is_mine {
+                                                 if ui.small_button("❌").clicked() {
+                                                     // Assuming `token` field is the order ID or we use a specific ID field?
+                                                     // For MVP, if "token" represents the order reference or handle.
+                                                     // Let's use the 'token' field from the order object if available.
+                                                      if let Some(id_val) = o.get("id") {
+                                                          if let Some(id) = id_val.as_str() {
+                                                              self.tx.send(BgMessage::CancelOrder(id.to_string())).ok();
+                                                          }
+                                                      } else if let Some(t) = o.get("token") {
+                                                          // Fallback if token is used as ID (unlikely but matching prev logic)
+                                                          if let Some(id) = t.as_str() {
+                                                               self.tx.send(BgMessage::CancelOrder(id.to_string())).ok();
+                                                          }
+                                                      }
+                                                 }
+                                             }
+                                             ui.label(format!("{:.4}", amount));
+                                         });
+                                     });
+                                 }
+                             });
+                         });
+                     });
                 },
 
                 Tab::Settings => {
