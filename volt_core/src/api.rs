@@ -428,23 +428,28 @@ fn handle_request(
                  ApiResponse { status: "error".to_string(), message: "Missing address".to_string(), data: None }
             }
         },
-        "get_history" => {
+                  ApiResponse { status: "error".to_string(), message: "Missing address".to_string(), data: None }
+             }
+        },
+        "get_address_history" => {
             if let Some(addr) = req.address {
                 let chain = blockchain.lock().unwrap();
                 let mut history = Vec::new();
-                
                 let height = chain.get_height();
-                let limit = 100; // Return last 100 txs
+                
+                // Optimized Search: Limit to last 5000 blocks for performance
+                let limit = 5000;
                 let start = if height > limit { height - limit } else { 0 };
 
                 for i in start..height {
                     if let Some(block) = chain.get_block(i) {
                         for tx in &block.transactions {
                             if tx.sender == addr || tx.receiver == addr {
-                                let mut txt = serde_json::to_value(tx).unwrap_or(serde_json::Value::Null);
-                                txt["timestamp"] = serde_json::json!(block.timestamp);
-                                txt["block_index"] = serde_json::json!(block.index);
-                                history.push(txt);
+                                let mut tx_val = serde_json::to_value(tx).unwrap_or(serde_json::Value::Null);
+                                tx_val["timestamp"] = serde_json::json!(block.timestamp);
+                                tx_val["block_index"] = serde_json::json!(block.index);
+                                tx_val["confirmations"] = serde_json::json!(height - block.index);
+                                history.push(tx_val);
                             }
                         }
                     }
@@ -453,11 +458,36 @@ fn handle_request(
                 
                 ApiResponse {
                     status: "success".to_string(),
-                    message: "History retrieved".to_string(),
-                    data: Some(serde_json::json!({ "history": history }))
+                    message: "Address history retrieved".to_string(),
+                    data: Some(serde_json::json!({ "address": addr, "history": history, "count": history.len() }))
                 }
             } else {
-                 ApiResponse { status: "error".to_string(), message: "Missing address".to_string(), data: None }
+                ApiResponse { status: "error".to_string(), message: "Missing address".to_string(), data: None }
+            }
+        },
+        "get_transaction" => {
+            if let Some(hash_hex) = req.hash {
+                let chain = blockchain.lock().unwrap();
+                if let Some(tx) = chain.get_transaction(&hash_hex) {
+                    let mut tx_val = serde_json::to_value(&tx).unwrap_or(serde_json::Value::Null);
+                    
+                    // Add extra context if possible
+                    let height = chain.get_height();
+                    // We need to find WHICH block contains it to get block info/confirmations
+                    // For now, if get_transaction works, it's in DB.
+                    // To find block height efficiently, we'd need a TxIndex.
+                    // For now, let's return the tx.
+                    
+                    ApiResponse {
+                        status: "success".to_string(),
+                        message: "Transaction found".to_string(),
+                        data: Some(tx_val)
+                    }
+                } else {
+                    ApiResponse { status: "error".to_string(), message: "Transaction not found".to_string(), data: None }
+                }
+            } else {
+                ApiResponse { status: "error".to_string(), message: "Missing hash".to_string(), data: None }
             }
         },
         "get_peers" => {
