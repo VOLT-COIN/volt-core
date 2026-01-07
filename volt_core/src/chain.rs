@@ -374,7 +374,7 @@ impl Blockchain {
              }
              
              // 3. Re-initialize DB
-             blockchain.db = Database::new("volt.db").ok();
+             blockchain.db = Database::new("volt.db").ok().map(Arc::new);
              
              // 4. Create correct Genesis
              blockchain.create_genesis_block();
@@ -493,7 +493,7 @@ impl Blockchain {
     
     // Wrapper for API
     pub fn apply_transaction_to_state(&mut self, tx: &Transaction) -> bool {
-        self.state.apply_transaction(tx, self.chain.len() as u64)
+        self.state.apply_transaction(tx, self.get_height())
     }
 
     pub fn get_balance(&self, address: &str, token: &str) -> u64 {
@@ -1076,7 +1076,7 @@ impl Blockchain {
     }
     
     pub fn get_mining_candidate(&self, miner_address: String) -> Block {
-        let _height = self.chain.len() as u64;
+        let _height = self.get_height();
         let mut reward = self.calculate_reward(_height);
         
         let mut txs = self.pending_transactions.clone();
@@ -1182,7 +1182,7 @@ impl Blockchain {
 
          // 1. Verify Claimed Stake
          let miner_addr = block.transactions[0].receiver.clone(); // Coinbase receiver is the miner
-         let actual_stake = self.get_stake(&miner_addr);
+         let actual_stake = self.state.get_stake(&miner_addr);
          if block.validator_stake > actual_stake {
              println!("[Hybrid] Invalid Stake Claim: Claimed {}, Actual {}", block.validator_stake, actual_stake);
              return false;
@@ -1459,7 +1459,7 @@ impl Blockchain {
         for i in 0..count {
             // Get from chain vector (assuming it holds full chain or we have DB)
             // Fallback to internal lookup which handles both
-            if let Some(block) = self.chain.get((height - i) as usize).cloned() {
+            if let Some(block) = self.get_block((height - i) as u64) {
                 timestamps.push(block.timestamp);
             } else if let Some(ref db) = self.db {
                 if let Ok(Some(block)) = db.get_block(height - i) {

@@ -45,6 +45,7 @@ impl Node {
         let chain_ref = self.blockchain.clone();
         let peers_ref = self.peers.clone();
         let port_ref = self.port;
+        let banned_ref = self.banned_peers.clone();
         
         thread::spawn(move || {
             // UPnP: Try to open port
@@ -84,7 +85,7 @@ impl Node {
                     Ok(mut stream) => { 
                         let chain_inner = chain_ref.clone();
                         let peers_inner = peers_ref.clone();
-                        let banned_inner = self.banned_peers.clone(); // Capture
+                        let banned_inner = banned_ref.clone();
                         
                         // Check Ban
                         let peer_addr = stream.peer_addr();

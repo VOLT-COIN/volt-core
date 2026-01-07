@@ -655,7 +655,7 @@ fn handle_request(
                  let mut chain = blockchain.lock().unwrap();
                  
                  let sender = wallet.get_address();
-                 let current_nonce = *chain.state.nonces.get(&sender).unwrap_or(&0);
+                 let current_nonce = chain.state.get_nonce(&sender);
                  let next_nonce = current_nonce + 1;
 
                  let mut tx = Transaction::new_stake(sender, amt, next_nonce);
@@ -681,7 +681,7 @@ fn handle_request(
                  let mut chain = blockchain.lock().unwrap();
                  
                  let sender = wallet.get_address();
-                 let current_nonce = *chain.state.nonces.get(&sender).unwrap_or(&0);
+                 let current_nonce = chain.state.get_nonce(&sender);
                  let next_nonce = current_nonce + 1;
 
                  let mut tx = Transaction::new_unstake(sender, amt, next_nonce);
@@ -710,7 +710,7 @@ fn handle_request(
                  let mut chain = blockchain.lock().unwrap();
                  let sender = wallet.get_address();
                  
-                 let current_nonce = *chain.state.nonces.get(&sender).unwrap_or(&0);
+                 let current_nonce = chain.state.get_nonce(&sender);
                  let next_nonce = current_nonce + 1;
                  
                  let mut tx = Transaction::new_order(sender, token, &side, amount, price, next_nonce);
@@ -736,7 +736,7 @@ fn handle_request(
                  let mut chain = blockchain.lock().unwrap();
                  let sender = wallet.get_address();
                  
-                 let current_nonce = *chain.state.nonces.get(&sender).unwrap_or(&0);
+                 let current_nonce = chain.state.get_nonce(&sender);
                  let next_nonce = current_nonce + 1;
                  
                  let mut tx = Transaction::new_cancel(sender, id, next_nonce);
