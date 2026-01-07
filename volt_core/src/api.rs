@@ -428,9 +428,6 @@ fn handle_request(
                  ApiResponse { status: "error".to_string(), message: "Missing address".to_string(), data: None }
             }
         },
-                  ApiResponse { status: "error".to_string(), message: "Missing address".to_string(), data: None }
-             }
-        },
         "get_address_history" => {
             if let Some(addr) = req.address {
                 let chain = blockchain.lock().unwrap();
@@ -1048,5 +1045,5 @@ fn handle_request(
         },
         _ => ApiResponse { status: "error".to_string(), message: "Unknown Command".to_string(), data: None }
     }
-    }
+}
 
