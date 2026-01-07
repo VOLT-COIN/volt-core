@@ -304,7 +304,7 @@ impl ChainState {
 }
 
 pub struct Blockchain {
-pub struct Blockchain {
+
     // pub chain: Vec<Block>, // Removed for Scalability
     pub tip: Option<Block>, // Cache the Tip
     pub pending_transactions: Vec<Transaction>,
