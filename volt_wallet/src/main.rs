@@ -53,6 +53,7 @@ fn configure_theme(ctx: &egui::Context) {
 // Helper to load icon for Window Titlebar
 // Helper to load icon for Window Titlebar
 fn load_icon() -> egui::IconData {
+    let (icon_rgba, icon_width, icon_height) = {
         let image = image::load_from_memory(include_bytes!("../assets/logo.png"))
             .expect("Failed to load icon")
             .into_rgba8();
