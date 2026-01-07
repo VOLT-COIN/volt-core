@@ -462,7 +462,6 @@ fn handle_request(
                 ApiResponse { status: "error".to_string(), message: "Missing address".to_string(), data: None }
             }
         },
-        },
         "get_peers" => {
             let peers = node.peers.lock().unwrap().clone();
             ApiResponse {
