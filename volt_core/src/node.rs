@@ -8,6 +8,7 @@ use std::time::Duration;
 use crate::block::Block;
 use crate::transaction::Transaction;
 use crate::chain::Blockchain;
+use crate::kademlia::{NodeId, RoutingTable, Peer}; // Import Kademlia
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Message {
@@ -24,6 +25,7 @@ pub struct Node {
     pub blockchain: Arc<Mutex<Blockchain>>,
     pub peers: Arc<Mutex<Vec<String>>>,
     pub banned_peers: Arc<Mutex<HashSet<String>>>, // New Field
+    pub routing_table: Arc<Mutex<RoutingTable>>, // DHT
     pub port: u16,
 }
 
@@ -33,6 +35,7 @@ impl Node {
             blockchain,
             peers: Arc::new(Mutex::new(Vec::new())),
             banned_peers: Arc::new(Mutex::new(HashSet::new())),
+            routing_table: Arc::new(Mutex::new(RoutingTable::new(NodeId::random()))),
             port,
         }
     }
@@ -46,6 +49,7 @@ impl Node {
         let peers_ref = self.peers.clone();
         let port_ref = self.port;
         let banned_ref = self.banned_peers.clone();
+        let routing_ref = self.routing_table.clone(); // DHT Ref
         
         thread::spawn(move || {
             // UPnP: Try to open port
@@ -86,6 +90,7 @@ impl Node {
                         let chain_inner = chain_ref.clone();
                         let peers_inner = peers_ref.clone();
                         let banned_inner = banned_ref.clone();
+                        let routing_inner = routing_ref.clone();
                         
                         // Check Ban
                         let peer_addr = stream.peer_addr();
@@ -152,6 +157,22 @@ impl Node {
                                         println!("[P2P] Received Transaction");
                                         let mut chain = chain_inner.lock().unwrap();
                                         chain.create_transaction(tx);
+                                        Ok(None)
+                                    },
+                                    Message::FindNode(target_id) => {
+                                        let neighbors = routing_inner.lock().unwrap().find_closest(&target_id, 20);
+                                        let resp = Message::Neighbors(neighbors);
+                                        let json = serde_json::to_string(&resp).unwrap();
+                                        // We need to write this to stream.
+                                        // Accessing stream here is tricky because we are inside `process_message`.
+                                        // `process_message` returns Ok(Some(resp)) to send it back!
+                                        // Perfect.
+                                        Ok(Some(resp))
+                                    },
+                                    Message::Neighbors(peers) => {
+                                        for p in peers {
+                                            routing_inner.lock().unwrap().add_peer(p);
+                                        }
                                         Ok(None)
                                     },
                                     Message::GetChain => {

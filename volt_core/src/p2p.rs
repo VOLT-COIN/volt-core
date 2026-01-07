@@ -5,12 +5,18 @@ use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use crate::block::Block;
 use crate::transaction::Transaction;
+use crate::kademlia::NodeId; // Import
+use crate::kademlia::Peer;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Message {
     Handshake { port: u16 },
     NewBlock(Block),
     NewTransaction(Transaction),
+    // DHT
+    FindNode(NodeId),
+    Neighbors(Vec<Peer>),
+}
 }
 
 pub struct P2P {
