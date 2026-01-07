@@ -273,9 +273,10 @@ fn handle_request(
         },
         "get_recent_blocks" => {
             let chain = blockchain.lock().unwrap();
-            let len = chain.chain.len();
+            let len = chain.get_height() as usize;
             let start = if len > 20 { len - 20 } else { 0 };
-            let blocks = &chain.chain[start..];
+            let blocks = chain.get_all_blocks(); // Slice TODO efficiently later
+            let blocks = &blocks[start..];
             let response_data = serde_json::to_value(blocks).unwrap_or(Value::Null);
             ApiResponse { 
                 status: "success".to_string(), 
@@ -289,8 +290,8 @@ fn handle_request(
         },
         "get_chain_info" => {
             let chain = blockchain.lock().unwrap();
-            let height = chain.chain.len();
-            let last_hash = chain.chain.last().map(|b| &b.hash).unwrap_or(&String::from("0000000000000000000000000000000000000000000000000000000000000000")).clone();
+            let height = chain.get_height() as usize;
+            let last_hash = chain.get_last_block().map(|b| b.hash).unwrap_or("0".to_string());
             
             ApiResponse {
                 status: "success".to_string(),
@@ -367,8 +368,8 @@ fn handle_request(
              if let Some(addr) = req.address {
                  let chain = blockchain.lock().unwrap();
                  let bal = chain.state.get_balance(&addr, "VLT");
-                 let staked = *chain.state.stakes.get(&addr).unwrap_or(&0);
-                 let nonce = *chain.state.nonces.get(&addr).unwrap_or(&0);
+                 let staked = chain.state.get_stake(&addr);
+                 let nonce = chain.state.get_nonce(&addr);
                  
                  ApiResponse {
                      status: "success".to_string(),
@@ -498,7 +499,7 @@ fn handle_request(
                 // let signature = wallet.sign(&msg);
                 
                 // Fetch Nonce
-                let current_nonce = *chain.state.nonces.get(&wallet.get_address()).unwrap_or(&0);
+                let current_nonce = chain.state.get_nonce(&wallet.get_address());
                 let next_nonce = current_nonce + 1;
                 
                 // Calculate Fee (0.1% default if not provided)

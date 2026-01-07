@@ -129,7 +129,7 @@ impl StratumServer {
                                  let chain = chain_payout.lock().unwrap();
                                  if let Some(ref db) = chain.db {
                                      let balances = db.get_all_miner_balances();
-                                     let mut current_nonce = *chain.state.nonces.get(pool_addr).unwrap_or(&0);
+                                     let mut current_nonce = chain.state.get_nonce(pool_addr);
                                      for tx in &chain.pending_transactions {
                                          if tx.sender == pool_addr && tx.nonce > current_nonce {
                                              current_nonce = tx.nonce;
@@ -337,7 +337,7 @@ fn handle_client(
             // Check Height/Time
             let (h, next_block) = {
                 let c = chain_n.lock().unwrap();
-                (c.chain.len() as u64, c.get_mining_candidate(miner_n.lock().unwrap().clone()))
+                (c.get_height(), c.get_mining_candidate(miner_n.lock().unwrap().clone()))
             };
             let last_h = *height_n.lock().unwrap();
             let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
@@ -454,7 +454,7 @@ fn handle_client_ws(
         if *is_authorized.lock().unwrap() {
              let (h, next_block) = {
                 let c = chain.lock().unwrap();
-                (c.chain.len() as u64, c.get_mining_candidate(session_miner_addr.lock().unwrap().clone()))
+                (c.get_height(), c.get_mining_candidate(session_miner_addr.lock().unwrap().clone()))
             };
             let last_h = *last_notified_height.lock().unwrap();
             let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();

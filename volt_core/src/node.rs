@@ -308,7 +308,7 @@ impl Node {
                 
                 // 2. Determine Sync Status
                 let chain = chain_client.lock().unwrap();
-                let my_height = chain.chain.len();
+                let my_height = chain.get_height() as usize;
                 drop(chain); // Unlock
 
                 // 3. Distributed Sync: Randomly select a peer to request next chunk
@@ -440,7 +440,7 @@ impl Node {
              match tungstenite::connect(&peer_addr) {
                  Ok((mut socket, _)) => {
                      let chain = self.blockchain.lock().unwrap();
-                     let msg = Message::Chain(chain.chain.clone());
+                     let msg = Message::Chain(chain.get_all_blocks());
                      drop(chain); // Unlock
 
                      let json = serde_json::to_string(&msg).unwrap_or_default();
@@ -459,7 +459,7 @@ impl Node {
             // Raw TCP
             if let Ok(mut stream) = TcpStream::connect(&peer_addr) {
                  let chain = self.blockchain.lock().unwrap();
-                 let msg = Message::Chain(chain.chain.clone());
+                 let msg = Message::Chain(chain.get_all_blocks());
                  
                  let json = serde_json::to_string(&msg).unwrap_or_default();
                  

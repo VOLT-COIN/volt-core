@@ -3,8 +3,7 @@ use crate::block::Block;
 use crate::transaction::{Transaction, TxType};
 use crate::db::Database;
 use crate::script::VirtualMachine;
-use crate::db::Database;
-use crate::script::VirtualMachine;
+
 use std::collections::{HashMap, BTreeMap, HashSet};
 use std::sync::Arc;
 
@@ -142,23 +141,8 @@ impl ChainState {
         });
     }
 
-    pub fn apply_transaction(&mut self, tx: &Transaction, block_height: u64) -> bool {
-        // 1. DEBIT
-        if tx.sender != "SYSTEM" {
-            // Determine what to debit
-            let _fee_token = "VLT";
-            
-            // 1. Debit Fee (Hybrid: Try VLT first, then Token)
-            let vlt_bal = self.get_balance(&tx.sender, "VLT");
-            let fee_paid_in_vlt = if vlt_bal >= tx.fee {
-                self.set_balance(&tx.sender, "VLT", vlt_bal - tx.fee);
-                true
-            } else {
-                false
-            };
 
-            if !fee_paid_in_vlt {
-                pub fn get_stake(&self, address: &str) -> u64 {
+    pub fn get_stake(&self, address: &str) -> u64 {
          if let Some(ref db) = self.db {
             if let Ok(tree) = db.state_stakes() {
                 if let Ok(Some(val)) = tree.get(address) {
@@ -232,6 +216,25 @@ impl ChainState {
          }
          stakes
     }
+
+    pub fn apply_transaction(&mut self, tx: &Transaction, block_height: u64) -> bool {
+        // 1. DEBIT
+        if tx.sender != "SYSTEM" {
+            // Determine what to debit
+            let _fee_token = "VLT";
+            
+            // 1. Debit Fee (Hybrid: Try VLT first, then Token)
+            let vlt_bal = self.get_balance(&tx.sender, "VLT");
+            let fee_paid_in_vlt = if vlt_bal >= tx.fee {
+                self.set_balance(&tx.sender, "VLT", vlt_bal - tx.fee);
+                true
+            } else {
+                false
+            };
+
+            if !fee_paid_in_vlt {
+                return false;
+            }
 
             // 2. Debit Amount (Token)
             if tx.tx_type == TxType::Transfer || tx.tx_type == TxType::Stake {
@@ -409,6 +412,15 @@ impl Blockchain {
 
 
 
+
+    pub fn get_all_blocks(&self) -> Vec<Block> {
+        if let Some(ref db) = self.db {
+            db.get_all_blocks().unwrap_or_default()
+        } else {
+            Vec::new()
+        }
+    }
+
     pub fn rebuild_state(&mut self) {
         let height = self.get_height();
         println!("[Chain] Rebuilding State from {} blocks (DB Iteration)...", height);
@@ -533,10 +545,13 @@ impl Blockchain {
         println!("[Genesis] Please update remote checkpoints with this new hash.");
 
 
-        self.chain.push(genesis_block.clone());
+
+        // Save Genesis to DB and set TIP
         if let Some(ref db) = self.db {
             let _ = db.save_block(&genesis_block);
         }
+        self.tip = Some(genesis_block.clone());
+
         // Fix: Apply Genesis transactions to State so balance shows up immediately
         self.rebuild_state();
     }
@@ -572,7 +587,7 @@ impl Blockchain {
         }
 
         if transaction.sender != "SYSTEM" {
-             let current_nonce = *self.state.nonces.get(&transaction.sender).unwrap_or(&0);
+             let current_nonce = self.state.get_nonce(&transaction.sender);
              if transaction.nonce <= current_nonce {
                  println!("Error: Invalid Nonce (Current: {}, Tx: {})", current_nonce, transaction.nonce);
                  return false;
@@ -589,7 +604,7 @@ impl Blockchain {
         match transaction.tx_type {
             TxType::IssueToken => {
                  if transaction.token == "VLT" { return false; }
-                 if self.state.tokens.contains_key(&transaction.token) { return false; }
+                 if self.state.token_exists(&transaction.token) { return false; }
                  if transaction.token.len() < 3 || transaction.token.len() > 8 { return false; }
             },
             TxType::Burn => {
@@ -780,7 +795,7 @@ impl Blockchain {
             },
             TxType::Unstake => {
                  // Check if staked amount >= amount
-                 let current_stake = *self.state.stakes.get(&transaction.sender).unwrap_or(&0);
+                 let current_stake = self.state.get_stake(&transaction.sender);
                  if current_stake < transaction.amount { return false; }
             },
             TxType::AddLiquidity => {
@@ -967,7 +982,7 @@ impl Blockchain {
     }
 
     pub fn mine_pending_transactions(&mut self, miner_address: String) {
-        let height = self.chain.len() as u64;
+        let height = self.get_height();
         let mut reward = self.calculate_reward(height);
         
         // Phase 12: Fee Split Logic
@@ -996,25 +1011,28 @@ impl Blockchain {
              // So yes, we MINT the fee destination here.
              
              if dev_share > 0 {
-                  let dev_tx = Transaction::new(String::from("SYSTEM"), dev_wallet.to_string(), dev_share, "VLT".to_string(), 0);
+                  let dev_tx = Transaction::new(String::from("SYSTEM"), dev_wallet.to_string(), dev_share, "VLT".to_string(), 0, 0);
                   txs.push(dev_tx);
              }
         }
         
-        let my_stake = *self.state.stakes.get(&miner_address).unwrap_or(&0);
-        let reward_tx = Transaction::new(String::from("SYSTEM"), miner_address.clone(), reward, "VLT".to_string(), 0);
+        let my_stake = self.state.get_stake(&miner_address);
+        let reward_tx = Transaction::new(String::from("SYSTEM"), miner_address.clone(), reward, "VLT".to_string(), 0, 0);
         txs.insert(0, reward_tx); 
 
         // Staking Logic - Use local collection to avoid self-borrow issues if targeting self.pending (though here we target local txs, so it IS safe)
-        if !self.state.stakes.is_empty() {
-             let total_staked: u64 = self.state.stakes.values().sum();
+
+        let all_stakes = self.state.get_all_stakes();
+        if !all_stakes.is_empty() {
+             let total_staked: u64 = all_stakes.iter().map(|(_, amt)| amt).sum();
              if total_staked > 0 {
-                 for (staker, amount) in &self.state.stakes {
+                 for (staker, amount) in all_stakes {
+
                      let staking_inflation = 10;
                      if let Some(total_reward) = amount.checked_mul(staking_inflation) {
                          if let Some(share) = total_reward.checked_div(total_staked) {
                              if share > 0 {
-                                  let stake_tx = Transaction::new(String::from("SYSTEM"), staker.clone(), share, "VLT".to_string(), 0);
+                                  let stake_tx = Transaction::new(String::from("SYSTEM"), staker.clone(), share, "VLT".to_string(), 0, 0);
                                   txs.push(stake_tx);
                              }
                          }
@@ -1023,7 +1041,7 @@ impl Blockchain {
              }
         }
 
-        let previous_block = self.chain.last().unwrap();
+        let previous_block = self.get_last_block().unwrap();
         let difficulty = self.get_next_difficulty();
         
         println!("Mining block {} [Difficulty: {}, Reward: {:.8} VLT]...", previous_block.index + 1, difficulty, reward as f64 / 100_000_000.0);
@@ -1043,7 +1061,12 @@ impl Blockchain {
                 self.state.apply_transaction(tx, new_block.index);
             }
     
-            self.chain.push(new_block.clone());
+
+            if let Some(ref db) = self.db {
+                 let _ = db.save_block(&new_block);
+            }
+            self.tip = Some(new_block.clone());
+
             if let Some(ref db) = self.db {
                 let _ = db.save_block(&new_block);
             }
@@ -1119,7 +1142,7 @@ impl Blockchain {
                      if let Some(total_reward) = amount.checked_mul(staking_inflation) {
                          if let Some(share) = total_reward.checked_div(total_staked) {
                              if share > 0 {
-                                  let stake_tx = Transaction::new(String::from("SYSTEM"), staker.clone(), share, "VLT".to_string(), 0);
+                                  let stake_tx = Transaction::new(String::from("SYSTEM"), staker.clone(), share, "VLT".to_string(), 0, 0);
                                   txs.push(stake_tx);
                              }
                          }
@@ -1306,7 +1329,12 @@ impl Blockchain {
              }
          }
 
-         self.chain.push(block.clone());
+
+         if let Some(ref db) = self.db {
+             let _ = db.save_block(&block);
+         }
+         self.tip = Some(block.clone());
+
          if let Some(ref db) = self.db {
              if let Err(e) = db.save_block(&block) {
                   println!("[Core] CRITICAL: DB Save Failed: {}", e);
@@ -1363,7 +1391,7 @@ impl Blockchain {
         };
 
         // 3. Fallback for new chains
-        if self.chain.len() < retarget_interval as usize {
+        if self.get_height() < retarget_interval as u64 {
             return 0x1f00ffff; // Genesis difficulty
         }
         
