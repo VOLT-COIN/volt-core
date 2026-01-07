@@ -61,15 +61,11 @@ impl ApiServer {
         port: u16,
         node: Arc<Node>
     ) -> Self {
-        // Check availability of encrypted wallet
-        let has_enc = std::path::Path::new("wallet.enc").exists();
-        let is_locked = Arc::new(Mutex::new(has_enc));
-
         ApiServer {
             blockchain,
             mining_status,
             wallet, // Use shared wallet
-            is_locked,
+            is_locked: Arc::new(Mutex::new(false)), // Deprecated, but keeping struct field for now to avoid huge refactor. We will ignore it.
             port,
             node,
         }
@@ -207,14 +203,17 @@ fn handle_request(
     
     match req.command.as_str() {
         "get_status" => {
-            let locked = *is_locked.lock().unwrap();
+            let locked = wallet.lock().unwrap().is_locked;
             let mining = *mining_status.lock().unwrap();
+            let initialized = std::path::Path::new("wallet.enc").exists() || std::path::Path::new("wallet.key").exists();
+            
             ApiResponse {
                 status: "success".to_string(),
                 message: "Node Status".to_string(),
                 data: Some(serde_json::json!({ 
                     "locked": locked,
-                    "mining": mining
+                    "mining": mining,
+                    "initialized": initialized
                 }))
             }
         },
@@ -237,8 +236,6 @@ fn handle_request(
                         
                         let mut wallet_lock = wallet.lock().unwrap();
                         *wallet_lock = w;
-                        let mut locked = is_locked.lock().unwrap();
-                        *locked = false;
                         
                         ApiResponse { 
                             status: "success".to_string(), 
@@ -253,27 +250,25 @@ fn handle_request(
             }
         },
         "get_mnemonic" => {
-            let locked = *is_locked.lock().unwrap();
-            if locked {
+            let wallet_lock = wallet.lock().unwrap();
+            if wallet_lock.is_locked {
                 return ApiResponse { status: "error".to_string(), message: "WALLET LOCKED".to_string(), data: None };
             }
-            let wallet = wallet.lock().unwrap();
             ApiResponse {
                 status: "success".to_string(),
                 message: "Seed phrase retrieved".to_string(),
-                data: Some(serde_json::json!({ "mnemonic": wallet.mnemonic }))
+                data: Some(serde_json::json!({ "mnemonic": wallet_lock.mnemonic }))
             }
         },
         "get_address" => {
-             let locked = *is_locked.lock().unwrap();
-             if locked {
+             let wallet_lock = wallet.lock().unwrap();
+             if wallet_lock.is_locked {
                  return ApiResponse { status: "error".to_string(), message: "WALLET LOCKED".to_string(), data: None };
              }
-             let wallet = wallet.lock().unwrap();
              ApiResponse {
                 status: "success".to_string(),
                 message: "Wallet address".to_string(),
-                data: Some(serde_json::json!({ "address": wallet.get_address() }))
+                data: Some(serde_json::json!({ "address": wallet_lock.get_address() }))
             }
         },
         "get_recent_blocks" => {
@@ -331,31 +326,32 @@ fn handle_request(
         },
         "get_blocks" => {
             let chain = blockchain.lock().unwrap();
-            let len = chain.chain.len();
+            let height = chain.get_height() as usize;
             
             // Default to last 10 blocks if not specified
-            let start = req.start_index.unwrap_or(if len > 10 { len - 10 } else { 0 });
-            let end = req.end_index.unwrap_or(len);
+            let start = req.start_index.unwrap_or(if height > 10 { height - 10 } else { 0 });
+            let end = req.end_index.unwrap_or(height);
             
             // Bounds check
-            let start = start.min(len);
-            let end = end.min(len);
+            let start = start.min(height);
+            let end = end.min(height);
             
             if start <= end {
-                 let blocks = &chain.chain[start..end];
-                 // We return simplified block data to avoid massive JSON
-                 let simplified: Vec<serde_json::Value> = blocks.iter().map(|b| {
-                     serde_json::json!({
-                         "index": b.index,
-                         "timestamp": b.timestamp,
-                         "transactions": b.transactions.len(),
-                         "hash": b.hash,
-                         "miner": b.transactions.last().map(|t| t.receiver.clone()).unwrap_or("?".to_string()) // Approximating miner
-                     })
-                 }).collect();
+                 let mut rev_blocks = Vec::new();
+                 // Use range to fetch chunks from DB
+                 for i in start..end {
+                     if let Some(b) = chain.get_block(i as u64) {
+                         rev_blocks.push(serde_json::json!({
+                             "index": b.index,
+                             "timestamp": b.timestamp,
+                             "transactions": b.transactions.len(),
+                             "hash": b.hash,
+                             "miner": b.transactions.last().map(|t| t.receiver.clone()).unwrap_or("?".to_string())
+                         }));
+                     }
+                 }
                  
                  // Reverse order (newest first)
-                 let mut rev_blocks = simplified;
                  rev_blocks.reverse();
 
                  ApiResponse {
@@ -397,14 +393,20 @@ fn handle_request(
                 
                 let mut assets: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
 
-                for block in &chain.chain {
-                    for tx in &block.transactions {
-                        // Calculate balances manually from chain history (Robust fallback)
-                        if tx.receiver == addr || tx.sender == addr {
-                            let entry = assets.entry(tx.token.clone()).or_insert(0);
-                            if tx.receiver == addr { *entry += tx.amount as i64; }
-                            if tx.sender == addr && tx.tx_type != crate::transaction::TxType::IssueToken { 
-                                *entry -= tx.amount as i64; 
+                let height = chain.get_height();
+                let limit = 2000; // Search Limit for API responsiveness
+                let start = if height > limit { height - limit } else { 0 };
+
+                for i in start..height {
+                    if let Some(block) = chain.get_block(i) {
+                        for tx in &block.transactions {
+                            // Calculate balances manually from chain history (Robust fallback)
+                            if tx.receiver == addr || tx.sender == addr {
+                                let entry = assets.entry(tx.token.clone()).or_insert(0);
+                                if tx.receiver == addr { *entry += tx.amount as i64; }
+                                if tx.sender == addr && tx.tx_type != crate::transaction::TxType::IssueToken { 
+                                    *entry -= tx.amount as i64; 
+                                }
                             }
                         }
                     }
@@ -430,13 +432,19 @@ fn handle_request(
                 let chain = blockchain.lock().unwrap();
                 let mut history = Vec::new();
                 
-                for block in &chain.chain {
-                    for tx in &block.transactions {
-                        if tx.sender == addr || tx.receiver == addr {
-                            let mut txt = serde_json::to_value(tx).unwrap_or(serde_json::Value::Null);
-                            txt["timestamp"] = serde_json::json!(block.timestamp);
-                            txt["block_index"] = serde_json::json!(block.index);
-                            history.push(txt);
+                let height = chain.get_height();
+                let limit = 100; // Return last 100 txs
+                let start = if height > limit { height - limit } else { 0 };
+
+                for i in start..height {
+                    if let Some(block) = chain.get_block(i) {
+                        for tx in &block.transactions {
+                            if tx.sender == addr || tx.receiver == addr {
+                                let mut txt = serde_json::to_value(tx).unwrap_or(serde_json::Value::Null);
+                                txt["timestamp"] = serde_json::json!(block.timestamp);
+                                txt["block_index"] = serde_json::json!(block.index);
+                                history.push(txt);
+                            }
                         }
                     }
                 }
@@ -474,15 +482,17 @@ fn handle_request(
         },
         "send_transaction" => {
             println!("[API] Received send_transaction request from GUI.");
-            let locked = *is_locked.lock().unwrap();
-             if locked {
+        "send_transaction" => {
+            println!("[API] Received send_transaction request from GUI.");
+            let mut wallet_lock = wallet.lock().unwrap(); // Lock strictly for modification check
+             if wallet_lock.is_locked {
                  println!("[API] Failed: Wallet is LOCKED.");
                  return ApiResponse { status: "error".to_string(), message: "WALLET LOCKED".to_string(), data: None };
              }
 
             if let (Some(to), Some(amount)) = (req.to, req.amount) {
                 println!("[API] Sending {} VLT to {}", amount, to);
-                let wallet = wallet.lock().unwrap();
+                // wallet_lock is already held
                 let mut chain = blockchain.lock().unwrap();
                 
                 // let msg = format!("{}{}{}", wallet.get_address(), to, amount);
@@ -503,11 +513,12 @@ fn handle_request(
                     to,
                     amount,
                     "VLT".to_string(),
-                    next_nonce
+                    next_nonce,
+                    final_fee
                 );
-                tx.fee = final_fee;
+                // tx.fee = final_fee; // Logic moved to constructor
                 
-                tx.sign(&wallet.private_key);
+                tx.sign(wallet.private_key.as_ref().unwrap());
                 
                 chain.pending_transactions.push(tx);
                 chain.save(); 
@@ -525,13 +536,13 @@ fn handle_request(
         },
         "issue_asset" => {
             println!("[API] Received issue_asset request.");
-            let locked = *is_locked.lock().unwrap();
-             if locked {
+            let wallet_lock = wallet.lock().unwrap();
+             if wallet_lock.is_locked {
                  return ApiResponse { status: "error".to_string(), message: "WALLET LOCKED".to_string(), data: None };
              }
 
             if let (Some(token_name), Some(supply)) = (req.token, req.amount) {
-                let wallet = wallet.lock().unwrap();
+                // wallet_lock held
                 let mut chain = blockchain.lock().unwrap();
              
                 // Check if already exists
@@ -550,7 +561,7 @@ fn handle_request(
                     next_nonce
                 );
                 
-                tx.sign(&wallet.private_key);
+                tx.sign(wallet.private_key.as_ref().unwrap());
                 chain.pending_transactions.push(tx);
                 chain.save(); 
                 
@@ -565,13 +576,13 @@ fn handle_request(
         },
         "burn_asset" => {
             println!("[API] Received burn_asset request.");
-            let locked = *is_locked.lock().unwrap();
-             if locked {
+            let wallet_lock = wallet.lock().unwrap();
+             if wallet_lock.is_locked {
                  return ApiResponse { status: "error".to_string(), message: "WALLET LOCKED".to_string(), data: None };
              }
 
             if let (Some(token_name), Some(amount)) = (req.token, req.amount) {
-                let wallet = wallet.lock().unwrap();
+                // wallet_lock held
                 let mut chain = blockchain.lock().unwrap();
                 
                 // Fetch Nonce
@@ -585,7 +596,7 @@ fn handle_request(
                     next_nonce
                 );
                 
-                tx.sign(&wallet.private_key);
+                tx.sign(wallet.private_key.as_ref().unwrap());
                 chain.pending_transactions.push(tx);
                 chain.save(); 
                 
@@ -600,13 +611,18 @@ fn handle_request(
         },
         "encrypt_wallet" => {
             if let Some(pass) = req.password {
-                let wallet_lock = wallet.lock().unwrap();
-                wallet_lock.save_encrypted(&pass);
-                
-                // Security Upgrade: Lock immediately after encryption
-                let mut locked = is_locked.lock().unwrap();
-                *locked = true;
-                drop(wallet_lock);
+                let mut wallet_lock = wallet.lock().unwrap();
+                if wallet_lock.save_encrypted(&pass) {
+                     // Auto-Lock after encryption (simulated by re-newing as locked)
+                     // Or just set is_locked = true?
+                     // Currently save_encrypted does not modify state to locked.
+                     // But we want to FORCE lock to ensure user knows password.
+                     *wallet_lock = Wallet::new(); // Reloads as locked (since .enc exists now)
+                     
+                     ApiResponse { status: "success".to_string(), message: "Wallet Encrypted & Locked".to_string(), data: None }
+                } else {
+                     ApiResponse { status: "error".to_string(), message: "Encryption Failed".to_string(), data: None }
+                }
                 
                 // Clear memory
                 let mut wallet_lock = wallet.lock().unwrap();
@@ -619,15 +635,11 @@ fn handle_request(
         },
         "unlock_wallet" => {
             if let Some(pass) = req.password {
-                if let Some(loaded_wallet) = Wallet::load_encrypted(&pass) {
-                    let mut wallet_lock = wallet.lock().unwrap();
-                    *wallet_lock = loaded_wallet;
-                    let mut locked = is_locked.lock().unwrap();
-                    *locked = false; 
-                    
+                let mut wallet_lock = wallet.lock().unwrap();
+                if wallet_lock.unlock(&pass) {
                     ApiResponse { status: "success".to_string(), message: "Wallet Unlocked".to_string(), data: None }
                 } else {
-                    ApiResponse { status: "error".to_string(), message: "Decryption Failed".to_string(), data: None }
+                    ApiResponse { status: "error".to_string(), message: "Decryption Failed (Wrong Password)".to_string(), data: None }
                 }
             } else {
                  ApiResponse { status: "error".to_string(), message: "Missing password".to_string(), data: None }
@@ -647,7 +659,7 @@ fn handle_request(
                  let next_nonce = current_nonce + 1;
 
                  let mut tx = Transaction::new_stake(sender, amt, next_nonce);
-                 tx.sign(&wallet.private_key);
+                 tx.sign(wallet.private_key.as_ref().unwrap());
                  
                  if chain.create_transaction(tx) {
                      chain.save();
@@ -673,7 +685,7 @@ fn handle_request(
                  let next_nonce = current_nonce + 1;
 
                  let mut tx = Transaction::new_unstake(sender, amt, next_nonce);
-                 tx.sign(&wallet.private_key);
+                 tx.sign(wallet.private_key.as_ref().unwrap());
                  
                  if chain.create_transaction(tx) {
                      chain.save();
@@ -691,6 +703,10 @@ fn handle_request(
                 (req.token, req.side, req.price, req.amount) {
                  
                  let wallet = wallet.lock().unwrap();
+                 if wallet.is_locked {
+                     return ApiResponse { status: "error".to_string(), message: "WALLET LOCKED".to_string(), data: None };
+                 }
+
                  let mut chain = blockchain.lock().unwrap();
                  let sender = wallet.get_address();
                  
@@ -698,7 +714,7 @@ fn handle_request(
                  let next_nonce = current_nonce + 1;
                  
                  let mut tx = Transaction::new_order(sender, token, &side, amount, price, next_nonce);
-                 tx.sign(&wallet.private_key);
+                 tx.sign(wallet.private_key.as_ref().unwrap());
                  
                  if chain.create_transaction(tx) {
                      chain.save();
@@ -713,6 +729,10 @@ fn handle_request(
         "cancel_order" => {
              if let Some(id) = req.token { // reusing token field for ID input
                  let wallet = wallet.lock().unwrap();
+                 if wallet.is_locked {
+                     return ApiResponse { status: "error".to_string(), message: "WALLET LOCKED".to_string(), data: None };
+                 }
+
                  let mut chain = blockchain.lock().unwrap();
                  let sender = wallet.get_address();
                  
@@ -720,7 +740,7 @@ fn handle_request(
                  let next_nonce = current_nonce + 1;
                  
                  let mut tx = Transaction::new_cancel(sender, id, next_nonce);
-                 tx.sign(&wallet.private_key);
+                 tx.sign(wallet.private_key.as_ref().unwrap());
                  
                  // Check if order exists before sending tx? No, chain validation handles it.
                  chain.pending_transactions.push(tx); // bypass strict create_transaction for now or use it if updated
@@ -818,23 +838,29 @@ fn handle_request(
                     }
                 }
 
-                // 2. Check Chain
-                for block in chain.chain.iter().rev() {
-                    for tx in &block.transactions {
-                        if tx.calculate_hash() == hash {
-                             let mut t = serde_json::to_value(tx).unwrap();
-                             t["status"] = serde_json::json!("confirmed");
-                             t["block_height"] = serde_json::json!(block.index);
-                             t["timestamp"] = serde_json::json!(block.timestamp);
-                             t["confirmations"] = serde_json::json!(chain.chain.len() as u64 - block.index + 1);
-                             t["hash"] = serde_json::json!(hash); // Ensure hash is present
-                             return ApiResponse {
-                                 status: "success".to_string(),
-                                 message: "Transaction found".to_string(),
-                                 data: Some(t)
-                             };
-                        }
-                    }
+                // 2. Check Chain (Iterate backwards from Tip using DB)
+                let height = chain.get_height();
+                let limit = 2000; // Search last 2000 blocks (~1.5 days)
+                let start = if height > limit { height - limit } else { 0 };
+
+                for i in (start..height).rev() {
+                     if let Some(block) = chain.get_block(i) {
+                         for tx in &block.transactions {
+                             if tx.calculate_hash() == hash {
+                                  let mut t = serde_json::to_value(tx).unwrap();
+                                  t["status"] = serde_json::json!("confirmed");
+                                  t["block_height"] = serde_json::json!(block.index);
+                                  t["timestamp"] = serde_json::json!(block.timestamp);
+                                  t["confirmations"] = serde_json::json!(height - block.index);
+                                  t["hash"] = serde_json::json!(hash);
+                                  return ApiResponse {
+                                      status: "success".to_string(),
+                                      message: "Transaction found".to_string(),
+                                      data: Some(t)
+                                  };
+                             }
+                         }
+                     }
                 }
 
                 ApiResponse { status: "error".to_string(), message: "Transaction not found".to_string(), data: None }
@@ -849,14 +875,20 @@ fn handle_request(
             let limit = 50; // max txs to return
 
             // Iterate backwards through blocks
-            'outer: for block in chain.chain.iter().rev() {
-                for tx in block.transactions.iter().rev() {
-                    let mut t = serde_json::to_value(tx).unwrap();
-                    t["block_index"] = serde_json::json!(block.index);
-                    t["timestamp"] = serde_json::json!(block.timestamp);
-                    t["hash"] = serde_json::json!(tx.calculate_hash()); // Calculate Hash dynamically
-                    txs.push(t);
-                    if txs.len() >= limit { break 'outer; }
+            let height = chain.get_height();
+            let limit = 100; // Search depth
+            let start = if height > limit { height - limit } else { 0 };
+
+            'outer: for i in (start..height).rev() {
+                if let Some(block) = chain.get_block(i) {
+                    for tx in block.transactions.iter().rev() {
+                        let mut t = serde_json::to_value(tx).unwrap();
+                        t["block_index"] = serde_json::json!(block.index);
+                        t["timestamp"] = serde_json::json!(block.timestamp);
+                        t["hash"] = serde_json::json!(tx.calculate_hash()); 
+                        txs.push(t);
+                        if txs.len() >= 50 { break 'outer; }
+                    }
                 }
             }
             
@@ -908,17 +940,23 @@ fn handle_request(
                      }
                  }
                  
-                 // 2. Check Recent Blocks
-                 for block in chain.chain.iter().rev() {
-                     if block.timestamp < since { break; } 
-                     for tx in &block.transactions {
-                         if tx.receiver == addr && tx.amount >= amount && tx.timestamp >= since {
-                             println!("[API] Payment FOUND in Block #{}", block.index);
-                             return ApiResponse { 
-                                 status: "success".to_string(), 
-                                 message: "Payment Confirmed".to_string(), 
-                                 data: Some(serde_json::json!({ "state": "confirmed", "tx": tx, "block": block.index })) 
-                             };
+                 // 2. Check Recent Blocks (Iterate DB backwards)
+                 let height = chain.get_height();
+                 let limit = 2000;
+                 let start = if height > limit { height - limit } else { 0 };
+                 
+                 for i in (start..height).rev() {
+                     if let Some(block) = chain.get_block(i) {
+                         if block.timestamp < since { break; } 
+                         for tx in &block.transactions {
+                             if tx.receiver == addr && tx.amount >= amount && tx.timestamp >= since {
+                                 println!("[API] Payment FOUND in Block #{}", block.index);
+                                 return ApiResponse { 
+                                     status: "success".to_string(), 
+                                     message: "Payment Confirmed".to_string(), 
+                                     data: Some(serde_json::json!({ "state": "confirmed", "tx": tx, "block": block.index })) 
+                                 };
+                             }
                          }
                      }
                  }

@@ -5,6 +5,7 @@ use crate::transaction::Transaction;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Block {
+    pub version: u32, // Protocol Version (Added for Longevity)
     pub index: u64,
     pub timestamp: u64, // Changed to u64 (Unix Seconds) for Bitcoin compatibility standards
     pub proof_of_work: u32, // Nonce (4 bytes)
@@ -24,6 +25,7 @@ impl Block {
         let merkle_root = Block::calculate_merkle_root(&transactions);
 
         let mut block = Block {
+            version: 1, // Default Version 1
             index,
             timestamp,
             proof_of_work,
@@ -69,7 +71,7 @@ impl Block {
         // Bitcoin Header Format (80 bytes)
         // Version (4) + PrevBlock (32) + MerkleRoot (32) + Timestamp (4) + Bits (4) + Nonce (4)
         
-        let version: u32 = 1;
+        let version: u32 = self.version; // Use structural version
         let mut bytes = Vec::new();
         
         bytes.extend(&version.to_le_bytes()); // 4

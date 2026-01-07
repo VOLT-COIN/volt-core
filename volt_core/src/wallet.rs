@@ -14,10 +14,12 @@ use sha2::{Sha256, Digest};
 use hmac::Hmac;
 use bip39::Mnemonic;
 
+#[derive(Clone)] // Added Clone for easier handling if needed, though SigningKey might not be Clone? k256 SigningKey is Clone.
 pub struct Wallet {
-    pub private_key: SigningKey,
-    pub public_key: VerifyingKey,
+    pub private_key: Option<SigningKey>, // None if Locked
+    pub public_key: Option<VerifyingKey>,
     pub mnemonic: Option<String>,
+    pub is_locked: bool,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -51,7 +53,7 @@ impl Wallet {
         let private_key = SigningKey::from_slice(&private_bytes).unwrap();
         let public_key = VerifyingKey::from(&private_key);
         
-        (Wallet { private_key, public_key, mnemonic: Some(phrase.clone()) }, phrase)
+        (Wallet { private_key: Some(private_key), public_key: Some(public_key), mnemonic: Some(phrase.clone()), is_locked: false }, phrase)
     }
 
     pub fn from_phrase(phrase: &str) -> Result<Self, String> {
@@ -67,61 +69,51 @@ impl Wallet {
             .map_err(|e| format!("Invalid key from seed: {}", e))?;
         let public_key = VerifyingKey::from(&private_key);
         
-        Ok(Wallet { private_key, public_key, mnemonic: Some(phrase.to_string()) })
+        Ok(Wallet { private_key: Some(private_key), public_key: Some(public_key), mnemonic: Some(phrase.to_string()), is_locked: false })
     }
 
 
 
     pub fn new() -> Self {
-        // Try load default
+        // 1. Check for Encrypted Wallet
+        if std::path::Path::new("wallet.enc").exists() {
+             return Wallet { private_key: None, public_key: None, mnemonic: None, is_locked: true };
+        }
+
+        // 2. Check for Legacy Plaintext
         if let Ok(contents) = fs::read_to_string("wallet.key") {
             // Try JSON First
             if let Ok(data) = serde_json::from_str::<WalletData>(&contents) {
                  if let Ok(bytes) = hex::decode(&data.key) {
                      if let Ok(private_key) = SigningKey::from_bytes(bytes.as_slice().into()) {
                          let public_key = VerifyingKey::from(&private_key);
-                         return Wallet { private_key, public_key, mnemonic: data.mnemonic };
+                         return Wallet { private_key: Some(private_key), public_key: Some(public_key), mnemonic: data.mnemonic, is_locked: false };
                      }
                  }
             }
-            // Fallback: Hex (Old Format)
-             if let Ok(bytes) = hex::decode(contents.trim()) {
-                 if let Ok(private_key) = SigningKey::from_bytes(bytes.as_slice().into()) {
-                     let public_key = VerifyingKey::from(&private_key);
-                     return Wallet { private_key, public_key, mnemonic: None };
-                 }
-             }
         }
         
-        // Generate new with mnemonic by default
-        let (wallet, _) = Wallet::create_with_mnemonic();
-        wallet.save();
-        wallet
+        // 3. Defaults to Locked/Empty if no file found (Requires Setup via RPC)
+        Wallet { private_key: None, public_key: None, mnemonic: None, is_locked: true }
     }
 
-    pub fn save(&self) {
-        let hex_key = hex::encode(self.private_key.to_bytes());
-        let data = WalletData { 
-            key: hex_key, 
-            mnemonic: self.mnemonic.clone() 
-        };
-        if let Ok(json) = serde_json::to_string_pretty(&data) {
-            fs::write("wallet.key", json).expect("Failed to write wallet.key");
-        }
-    }
-
-    pub fn save_encrypted(&self, password: &str) {
-        let hex_key = hex::encode(self.private_key.to_bytes());
+    pub fn save_encrypted(&self, password: &str) -> bool {
+        if self.is_locked || self.private_key.is_none() { return false; }
+        
+        let hex_key = hex::encode(self.private_key.as_ref().unwrap().to_bytes());
         let mut encrypted = encrypt_data(hex_key.as_bytes(), password);
-        encrypted.mnemonic = self.mnemonic.clone(); // Store mnemonic in encrypted file
+        encrypted.mnemonic = self.mnemonic.clone();
 
         let json = serde_json::to_string(&encrypted).unwrap();
-        fs::write("wallet.enc", json).expect("Failed to write wallet.enc");
-        // Optionally delete wallet.key
-        let _ = fs::remove_file("wallet.key");
+        if fs::write("wallet.enc", json).is_ok() {
+             // Successfully saved encrypted. Safe to delete legacy.
+             let _ = fs::remove_file("wallet.key");
+             return true;
+        }
+        false
     }
-
-    pub fn load_encrypted(password: &str) -> Option<Self> {
+    
+    pub fn unlock(&mut self, password: &str) -> bool {
         if let Ok(contents) = fs::read_to_string("wallet.enc") {
             if let Ok(data) = serde_json::from_str::<EncryptedData>(&contents) {
                 if let Ok(plaintext) = decrypt_data(&data, password) {
@@ -129,25 +121,46 @@ impl Wallet {
                          if let Ok(bytes) = hex::decode(hex_str.trim()) {
                              if let Ok(private_key) = SigningKey::from_bytes(bytes.as_slice().into()) {
                                  let public_key = VerifyingKey::from(&private_key);
-                                 return Some(Wallet { private_key, public_key, mnemonic: data.mnemonic });
+                                 self.private_key = Some(private_key);
+                                 self.public_key = Some(public_key);
+                                 self.mnemonic = data.mnemonic;
+                                 self.is_locked = false;
+                                 return true;
                              }
                          }
                      }
                 }
             }
         }
-        None
+        false
+    }
+
+    pub fn create(password: &str) -> Self {
+        let (mut w, _) = Wallet::create_with_mnemonic();
+        // private_key is Some by default from create_with_mnemonic helper refactor?
+        // Wait, I need to check create_with_mnemonic implementation below.
+        // It returns struct. I need to update it too.
+        w.is_locked = false; 
+        w.save_encrypted(password);
+        w
     }
 
     pub fn get_address(&self) -> String {
-        hex::encode(self.public_key.to_sec1_bytes())
+        if let Some(pk) = &self.public_key {
+            hex::encode(pk.to_sec1_bytes())
+        } else {
+            "LOCKED".to_string()
+        }
     }
 
-    #[allow(dead_code)]
     pub fn sign(&self, message: &str) -> String {
-        use k256::ecdsa::signature::Signer;
-        let signature: k256::ecdsa::Signature = self.private_key.sign(message.as_bytes());
-        hex::encode(signature.to_bytes())
+        if let Some(pk) = &self.private_key {
+            use k256::ecdsa::signature::Signer;
+            let signature: k256::ecdsa::Signature = pk.sign(message.as_bytes());
+            hex::encode(signature.to_bytes())
+        } else {
+            String::new() // Fail silently or panic?
+        }
     }
 }
 

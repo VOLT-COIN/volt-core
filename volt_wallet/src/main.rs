@@ -125,6 +125,14 @@ enum SettingsTab {
     Backup
 }
 
+#[derive(PartialEq, Clone, Copy)]
+enum FeeTier {
+    Eco,
+    Standard,
+    Fast,
+    Custom
+}
+
 struct WalletApp {
     selected_tab: Tab,
     balance: String,
@@ -134,10 +142,17 @@ struct WalletApp {
     pending_txs: u64, // Phase 12: For Fee Calc
     is_locked: bool,
     unlock_password: String,
+    is_initialized: bool, // New Field
+    setup_phrase: String, // For creation flow
+    setup_password: String, // For creation flow
+    
     history: Vec<Value>,
     recent_blocks: Vec<Value>,
     send_recipient: String,
+    send_recipient: String,
     send_amount: String,
+    send_fee_tier: FeeTier, // New Field
+    send_fee_input: String, // Kept for Custom
     
     show_sync_window: bool,
     initial_sync_done: bool,
@@ -183,6 +198,9 @@ enum GuiMessage {
         pending_txs: u64,
         is_locked: bool,
 
+        is_locked: bool,
+        is_initialized: bool,
+
         assets: HashMap<String, i64>,
         peers: usize,
     },
@@ -194,7 +212,10 @@ enum BgMessage {
     EncryptWallet(String),
     UnlockWallet(String),
     LockWallet,
+    UnlockWallet(String),
+    LockWallet,
     GetMnemonic,
+    GenerateMnemonic, // New
     ImportWallet(String),
     IssueToken { symbol: String, supply: u64 },
     Stake(u64),
@@ -243,10 +264,28 @@ impl WalletApp {
                                   }
                              }
                         },
+                        BgMessage::GenerateMnemonic => {
+                             if let Ok(res) = client.call("generate_mnemonic", None) {
+                                  if let Some(data) = res.data {
+                                       if let Some(m) = data.get("mnemonic") {
+                                            tx_gui.send(GuiMessage::ShowMnemonic(m.as_str().unwrap().to_string())).ok();
+                                       }
+                                  }
+                             }
+                        },
 
-                        BgMessage::ImportWallet(phrase) => {
-                             let params = serde_json::json!({ "mnemonic": phrase });
-                             let _ = client.call("import_wallet", Some(params));
+                        BgMessage::ImportWallet(data) => {
+                             // Expects "mnemonic|password" format for now (Hack to avoid huge refactor, or better: parse JSON?)
+                             // Let's assume data is "mnemonic|password"
+                             if let Some((phrase, pass)) = data.split_once('|') {
+                                 let params = serde_json::json!({ "mnemonic": phrase, "password": pass });
+                                 // Call 'import_mnemonic' RPC which is the encrypted one. 'import_wallet' is legacy.
+                                 let _ = client.call("import_mnemonic", Some(params));
+                             } else {
+                                  // Fallback for legacy import without password (should check API)
+                                  let params = serde_json::json!({ "mnemonic": data });
+                                  let _ = client.call("import_wallet", Some(params));
+                             }
                         },
                         BgMessage::IssueToken { symbol, supply } => {
                              let params = serde_json::json!({ "token": symbol, "amount": supply });
@@ -274,6 +313,9 @@ impl WalletApp {
                 let mut pending_txs = 0;
 
                 let mut is_locked = false;
+                let mut is_initialized = true; // Default true to avoid flash of setup screen if API fails? No, default false or wait for status.
+                // Better default to true (don't show setup) until confirmed false.
+                
                 let mut history_vec = Vec::new();
                 let mut blocks_vec = Vec::new();
 
@@ -284,6 +326,7 @@ impl WalletApp {
                      status = "Connected".to_string();
                      if let Some(data) = res.data {
                          if let Some(l) = data.get("locked") { is_locked = l.as_bool().unwrap_or(false); }
+                         if let Some(i) = data.get("initialized") { is_initialized = i.as_bool().unwrap_or(true); }
                      }
 
                      if !is_locked {
@@ -349,7 +392,7 @@ impl WalletApp {
 
                 tx_gui.send(GuiMessage::UpdateData { 
                     balance, address, history: history_vec, blocks: blocks_vec,
-                    status, block_height, pending_txs, is_locked, assets: assets_map, peers: peers_count
+                    status, block_height, pending_txs, is_locked, is_initialized, assets: assets_map, peers: peers_count
                 }).ok();
                 thread::sleep(Duration::from_secs(1));
             }
@@ -377,12 +420,19 @@ impl WalletApp {
             status: "Connecting...".to_string(),
             block_height: 0,
             pending_txs: 0,
+            pending_txs: 0,
             is_locked: false,
+            is_initialized: true,
             unlock_password: String::new(),
+            setup_phrase: String::new(),
+            setup_password: String::new(),
             history: vec![],
             recent_blocks: vec![],
             send_recipient: String::new(),
+            send_recipient: String::new(),
             send_amount: String::new(),
+            send_fee_tier: FeeTier::Standard, // Default
+            send_fee_input: String::new(),
             send_token: "VLT".to_string(),
 
             contacts,
@@ -441,7 +491,7 @@ impl eframe::App for WalletApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         while let Ok(msg) = self.rx.try_recv() {
              match msg {
-                GuiMessage::UpdateData { balance, address, history, blocks, status, block_height, pending_txs, is_locked, assets, peers } => {
+                GuiMessage::UpdateData { balance, address, history, blocks, status, block_height, pending_txs, is_locked, is_initialized, assets, peers } => {
                     if self.address != address { self.qr_texture = None; }
                     self.balance = balance;
                     self.address = address;
@@ -450,7 +500,9 @@ impl eframe::App for WalletApp {
                     self.status = status;
                     self.block_height = block_height;
                     self.pending_txs = pending_txs;
+                    self.pending_txs = pending_txs;
                     self.is_locked = is_locked;
+                    self.is_initialized = is_initialized;
                     self.assets = assets;
                     self.peers = peers;
                     self.last_heartbeat = Instant::now();
@@ -626,6 +678,86 @@ impl eframe::App for WalletApp {
         // --- CENTRAL PANEL ---
 
         egui::CentralPanel::default().show(ctx, |ui| {
+            if !self.is_initialized {
+                 // --- SETUP SCREEN ---
+                 ui.vertical_centered(|ui| {
+                     ui.add_space(50.0);
+                     ui.heading(egui::RichText::new("Welcome to Volt Wallet").size(32.0).color(COL_ACCENT));
+                     ui.add_space(20.0);
+                     
+                     if self.mnemonic_display.is_empty() {
+                         ui.label("No wallet detected. Please create or import one.");
+                         ui.add_space(30.0);
+                         
+                         if ui.button(egui::RichText::new("Create New Wallet").size(18.0)).clicked() {
+                             self.tx.send(BgMessage::GenerateMnemonic).ok();
+                         }
+                         ui.add_space(10.0);
+                         
+                         ui.horizontal(|ui| {
+                             ui.label("Or Import Mnemonic:");
+                             // ui.text_edit_singleline(&mut self.import_input); // Use below
+                         });
+                         ui.add(egui::TextEdit::multiline(&mut self.import_input).hint_text("Enter 12-word phrase..."));
+                         ui.add_space(10.0);
+                         
+                         ui.horizontal(|ui| {
+                             ui.label("Set Password:");
+                             ui.add(egui::TextEdit::singleline(&mut self.setup_password).password(true));
+                         });
+                         
+                         if ui.button("Import").clicked() {
+                             if !self.import_input.is_empty() && !self.setup_password.is_empty() {
+                                 self.tx.send(BgMessage::ImportWallet(format!("{}|{}", self.import_input, self.setup_password))).ok();
+                             }
+                         }
+                     } else {
+                         // SHOW GENERATED MNEMONIC & ASK PASSWORD
+                         ui.heading("Save your Secret Phrase safely!");
+                         ui.add_space(10.0);
+                         ui.monospace(egui::RichText::new(&self.mnemonic_display).color(egui::Color32::YELLOW).size(16.0));
+                         ui.add_space(20.0);
+                         
+                         ui.label("Set a strong password for encryption:");
+                         ui.add(egui::TextEdit::singleline(&mut self.setup_password).password(true));
+                         ui.add_space(20.0);
+                         
+                         if ui.button(egui::RichText::new("Initialize Wallet").size(18.0)).clicked() {
+                             if !self.setup_password.is_empty() {
+                                 // We need to send (mnemonic, password).
+                                 // I'll use a hack or update message properly.
+                                 // Let's update `BgMessage::ImportWallet` to `ImportWallet { mnemonic: String, password: String }`?
+                                 // Or `InitializeWallet`.
+                                 // I will use `BgMessage::ImportWallet(format!("{}|{}", self.mnemonic_display, self.setup_password))`.
+                                 // And update the handler.
+                                 self.tx.send(BgMessage::ImportWallet(format!("{}|{}", self.mnemonic_display, self.setup_password))).ok();
+                             }
+                         }
+                     }
+                 });
+            } else if self.is_locked {
+                 // --- UNLOCK SCREEN ---
+                 ui.vertical_centered(|ui| {
+                     ui.add_space(60.0);
+                     ui.heading(egui::RichText::new("Wallet Locked").size(24.0));
+                     ui.add_space(20.0);
+                     ui.label("Enter password to unlock:");
+                     ui.add_space(10.0);
+                     
+                     let response = ui.add(egui::TextEdit::singleline(&mut self.unlock_password).password(true));
+                     if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                         self.tx.send(BgMessage::UnlockWallet(self.unlock_password.clone())).ok();
+                         self.unlock_password.clear();
+                     }
+                     
+                     ui.add_space(20.0);
+                     if ui.button(egui::RichText::new("Unlock").size(18.0)).clicked() {
+                         self.tx.send(BgMessage::UnlockWallet(self.unlock_password.clone())).ok();
+                         self.unlock_password.clear();
+                     }
+                 });
+            } else {
+                 // --- DASHBOARD (Existing) ---
             // Header with Settings Icon
             ui.horizontal(|ui| {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -751,57 +883,78 @@ impl eframe::App for WalletApp {
 
                                 ui.add_space(15.0);
 
-                                // Phase 12: Dynamic Fee Calc
-                                let amt = self.send_amount.parse::<f64>().unwrap_or(0.0);
-                                let atomic_amount = (amt * 100_000_000.0) as u64;
-                                
-                                // let _node_url = "http://127.0.0.1:7862"; // Default to Local Node
-                                let base_fee = atomic_amount / 1000; // 0.1%
-                                let congestion_surcharge = self.pending_txs * 100_000_000; // 1 VLT per tx
-                                let calc_fee = base_fee + congestion_surcharge;
-                                
-                                let base_min = 100_000; // 0.001 VLT
-                                let fee = if calc_fee < base_min { base_min } else { calc_fee };
-                                
+                                // Fee Selection
+                                ui.label(egui::RichText::new("Network Fee:").size(16.0));
                                 ui.horizontal(|ui| {
-                                     ui.label("Est. Fee:");
-                                     ui.label(egui::RichText::new(format!("{:.8} VLT", fee as f64 / 100_000_000.0)).color(COL_SUBTEXT));
+                                    ui.radio_value(&mut self.send_fee_tier, FeeTier::Eco, "Eco (Slow)");
+                                    ui.radio_value(&mut self.send_fee_tier, FeeTier::Standard, "Standard");
+                                    ui.radio_value(&mut self.send_fee_tier, FeeTier::Fast, "Fast");
+                                    ui.radio_value(&mut self.send_fee_tier, FeeTier::Custom, "Custom");
                                 });
-                            
-                            ui.add_space(30.0);
-                            ui.horizontal(|ui| {
-                                ui.add_space(95.0); // Offset to align with inputs
-                                // Recalculate fee for button action scope or move logic out
-                                let amt = self.send_amount.parse::<f64>().unwrap_or(0.0);
-                                let atomic_amount = (amt * 100_000_000.0) as u64; 
-                                let base_fee = atomic_amount / 1000;
-                                let congestion_surcharge = self.pending_txs * 100_000_000;
-                                let calc = base_fee + congestion_surcharge;
-                                let base_min = 100_000;
-                                let final_fee = if calc < base_min { base_min } else { calc };
 
-                                if ui.add(egui::Button::new(egui::RichText::new("Confirm & Send").size(16.0)).fill(COL_ACCENT).min_size(egui::vec2(150.0, 45.0))).clicked() {
-                                     if let Ok(a) = self.send_amount.parse::<f64>() {
-                                          if a > 0.0 {
-                                             // Send atomic amount
-                                             self.tx.send(BgMessage::SendTransaction{ recipient: self.send_recipient.clone(), amount: atomic_amount as f64, fee: final_fee, token: self.send_token.clone() }).unwrap();
-                                             
-                                             // Optimistic UI Update: Deduct instantly
-                                             if self.send_token == "VLT" {
-                                                  if let Ok(current_bal) = self.balance.parse::<f64>() {
-                                                      let total_deduct = a + (final_fee as f64 / 100_000_000.0);
-                                                      let new_bal = current_bal - total_deduct;
-                                                      self.balance = format!("{:.8}", if new_bal < 0.0 { 0.0 } else { new_bal });
-                                                  }
-                                             }
-
-                                             self.send_amount.clear();
-                                             self.send_recipient.clear();
-                                             self.selected_tab = Tab::Dashboard;
-                                          }
-                                     }
+                                // Fee Logic Display
+                                let display_fee = match self.send_fee_tier {
+                                    FeeTier::Eco => 1000,
+                                    FeeTier::Standard => 5000,
+                                    FeeTier::Fast => 20000,
+                                    FeeTier::Custom => {
+                                        self.send_fee_input.parse::<u64>().unwrap_or(0)
+                                    }
+                                };
+                                
+                                if self.send_fee_tier == FeeTier::Custom {
+                                     ui.add_space(5.0);
+                                     ui.add(egui::TextEdit::singleline(&mut self.send_fee_input).hint_text("Enter Fee (Sats)"));
+                                } else {
+                                     // Clear custom input if not selected to avoid confusion? Or keep it?
+                                     // Let's show the calc
+                                     let time_est = match self.send_fee_tier {
+                                         FeeTier::Eco => "~30 mins",
+                                         FeeTier::Standard => "~10 mins",
+                                         FeeTier::Fast => "~2 mins",
+                                         _ => "?"
+                                     };
+                                     ui.label(egui::RichText::new(format!("Cost: {:.8} VLT | Est. Time: {}", display_fee as f64 / 100_000_000.0, time_est)).color(COL_SUBTEXT));
                                 }
-                            });
+
+                                ui.add_space(30.0);
+                                ui.horizontal(|ui| {
+                                    ui.add_space(95.0); 
+                                    
+                                    if ui.add(egui::Button::new(egui::RichText::new("Confirm & Send").size(16.0)).fill(COL_ACCENT).min_size(egui::vec2(150.0, 45.0))).clicked() {
+                                         if let Ok(a) = self.send_amount.parse::<f64>() {
+                                              if a > 0.0 {
+                                                 let amt = self.send_amount.parse::<f64>().unwrap_or(0.0);
+                                                 let atomic_amount = (amt * 100_000_000.0) as u64; 
+
+                                                 // Final calculated fee
+                                                 let final_fee = match self.send_fee_tier {
+                                                     FeeTier::Eco => 1000, 
+                                                     FeeTier::Standard => 5000,
+                                                     FeeTier::Fast => 20000,
+                                                     FeeTier::Custom => self.send_fee_input.parse::<u64>().unwrap_or(1000).max(1000) // Enforce Min even in custom
+                                                 };
+
+                                                 // Send atomic amount
+                                                 self.tx.send(BgMessage::SendTransaction{ recipient: self.send_recipient.clone(), amount: atomic_amount as f64, fee: final_fee, token: self.send_token.clone() }).unwrap();
+                                                 
+                                                 // Optimistic UI Update: Deduct instantly
+                                                 if self.send_token == "VLT" {
+                                                      if let Ok(current_bal) = self.balance.parse::<f64>() {
+                                                          let total_deduct = a + (final_fee as f64 / 100_000_000.0);
+                                                          let new_bal = current_bal - total_deduct;
+                                                          self.balance = format!("{:.8}", if new_bal < 0.0 { 0.0 } else { new_bal });
+                                                      }
+                                                 }
+   
+                                                 self.send_amount.clear();
+                                                 self.send_fee_input.clear();
+                                                 self.send_recipient.clear();
+                                                 self.selected_tab = Tab::Dashboard;
+                                              }
+                                         }
+                                    }
+                                });
                       });
                       
                       // Quick Contacts
@@ -1117,6 +1270,7 @@ impl eframe::App for WalletApp {
                      });
                 }
             }
+        } // Close else block
         });
     }
 }

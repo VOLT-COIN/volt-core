@@ -2,6 +2,7 @@ use std::net::{TcpListener, TcpStream, SocketAddrV4, Ipv4Addr};
 use std::io::Write;
 use std::thread;
 use std::sync::{Arc, Mutex};
+use std::collections::HashSet; // Import HashSet
 use serde::{Serialize, Deserialize};
 use std::time::Duration;
 use crate::block::Block;
@@ -22,6 +23,7 @@ pub enum Message {
 pub struct Node {
     pub blockchain: Arc<Mutex<Blockchain>>,
     pub peers: Arc<Mutex<Vec<String>>>,
+    pub banned_peers: Arc<Mutex<HashSet<String>>>, // New Field
     pub port: u16,
 }
 
@@ -30,6 +32,7 @@ impl Node {
         Node {
             blockchain,
             peers: Arc::new(Mutex::new(Vec::new())),
+            banned_peers: Arc::new(Mutex::new(HashSet::new())),
             port,
         }
     }
@@ -41,11 +44,39 @@ impl Node {
 
         let chain_ref = self.blockchain.clone();
         let peers_ref = self.peers.clone();
+        let port_ref = self.port;
         
         thread::spawn(move || {
+            // UPnP: Try to open port
+            Node::attempt_upnp_mapping(port_ref);
+            
+            // DNS Seeding (Longevity Hardening)
+            // Inline logic to avoid 'self' lifetime issues in thread
+            let seeds = vec![
+                "seed1.volt-coin.org", 
+                "seed2.volt-project.net",
+            ];
+            println!("[P2P] Resolving DNS Seeds...");
+            
+            if let Ok(mut peers_lock) = peers_ref.lock() {
+                for seed in seeds {
+                     if let Ok(lookup) = std::net::ToSocketAddrs::to_socket_addrs(&(seed, port_ref)) {
+                         for addr in lookup {
+                              if let std::net::SocketAddr::V4(addr4) = addr {
+                                   let ip = addr4.ip().to_string();
+                                   if !peers_lock.contains(&ip) {
+                                       println!("[P2P] Found Seed Peer: {}", ip);
+                                       peers_lock.push(ip);
+                                   }
+                              }
+                         }
+                     }
+                }
+            }
+
             // P2P Server (Internal Port 7861)
             let p2p_port = 7861;
-            let listener = TcpListener::bind(format!("0.0.0.0:{}", p2p_port)).expect("Failed to bind P2P port");
+            let listener = TcpListener::bind(format!("0.0.0.0:{}", port_ref)).expect("Failed to bind P2P port");
             println!("P2P Server listening on internal port {}", p2p_port);
 
             for stream in listener.incoming() {
@@ -53,6 +84,17 @@ impl Node {
                     Ok(mut stream) => { 
                         let chain_inner = chain_ref.clone();
                         let peers_inner = peers_ref.clone();
+                        let banned_inner = self.banned_peers.clone(); // Capture
+                        
+                        // Check Ban
+                        let peer_addr = stream.peer_addr();
+                        let peer_ip = if let Ok(addr) = peer_addr { addr.ip().to_string() } else { "unknown".to_string() };
+                        
+                        if banned_inner.lock().unwrap().contains(&peer_ip) {
+                            println!("[Security] Rejected connection from BANNED IP: {}", peer_ip);
+                            continue; // Drop connection
+                        }
+
                         thread::spawn(move || {
                             // ---------------------------------------------------------
                             // SERVER SIDE: Dual Mode (WebSocket + Raw TCP)
@@ -65,7 +107,8 @@ impl Node {
                                     Message::NewBlock(block) => {
                                         println!("[P2P] Received Block #{}", block.index);
                                         let mut chain = chain_inner.lock().unwrap();
-                                        let last_index = chain.chain.last().map(|b| b.index).unwrap_or(0);
+                                        let last_block = chain.get_last_block();
+                                        let last_index = last_block.as_ref().map(|b| b.index).unwrap_or(0);
 
                                         if block.index > last_index + 1 {
                                             println!("[P2P] Received Future Block #{} (Head: {}). Requesting Sync.", block.index, last_index);
@@ -75,7 +118,7 @@ impl Node {
                                             Ok(None)
                                         } else {
                                             // Verify Linkage
-                                            let last_hash = chain.chain.last().map(|b| b.hash.clone()).unwrap_or_default();
+                                            let last_hash = last_block.as_ref().map(|b| b.hash.clone()).unwrap_or_default();
                                             if block.previous_hash != last_hash {
                                                  println!("[P2P] Block #{} Fork Detected. Requesting Sync to resolve.", block.index);
                                                  return Ok(Some(Message::GetChain));
@@ -111,19 +154,28 @@ impl Node {
                                         Ok(None)
                                     },
                                     Message::GetChain => {
-                                        println!("[P2P] Received Chain Request (Full)");
-                                        let chain = chain_inner.lock().unwrap();
-                                        let msg_resp = Message::Chain(chain.chain.clone());
-                                        drop(chain); // Unlock
-                                        Ok(Some(msg_resp))
+                                        println!("[P2P] Received Chain Request (Full). Ignored in DB Mode (Use GetBlocks).");
+                                        // Return empty to signal no-op or just handle sync elsewhere
+                                        Ok(None)
                                     },
                                     Message::GetBlocks { start, limit } => {
-                                        // println!("[P2P] Received Chunk Request: {} to {}", start, start + limit);
                                         let chain = chain_inner.lock().unwrap();
-                                        let len = chain.chain.len();
-                                        if start < len {
-                                            let end = std::cmp::min(start + limit, len);
-                                            let chunk = chain.chain[start..end].to_vec();
+                                        let height = chain.get_height() as usize;
+                                        
+                                        if start < height {
+                                            let mut chunk = Vec::new();
+                                            let end = std::cmp::min(start + limit, height);
+                                            
+                                            // Iterate DB
+                                            if let Some(ref db) = chain.db {
+                                                // Optimize: In future, use range scan if key logic supports it
+                                                for i in start..end {
+                                                     if let Ok(Some(block)) = db.get_block(i as u64) {
+                                                         chunk.push(block);
+                                                     }
+                                                }
+                                            }
+                                            
                                             let msg_resp = Message::Chain(chunk);
                                             Ok(Some(msg_resp))
                                         } else {
@@ -193,7 +245,8 @@ impl Node {
                                                             },
                                                             Ok(None) => {}, // Continue
                                                             Err(_) => {
-                                                                println!("[Security] Banning/Disconnecting Peer.");
+                                                                println!("[Security] Banning Peer: {}", peer_ip);
+                                                                banned_inner.lock().unwrap().insert(peer_ip.clone());
                                                                 break;
                                                             }
                                                         }
@@ -221,10 +274,11 @@ impl Node {
                                              }
                                          },
                                          Ok(None) => {},
-                                         Err(_) => {
-                                             println!("[Security] Banning/Disconnecting Peer (TCP).");
-                                             // Loop/Scope ends, thread finishes, connection drops.
-                                         }
+                                          Err(_) => {
+                                              println!("[Security] Banning Peer (TCP): {}", peer_ip);
+                                              banned_inner.lock().unwrap().insert(peer_ip.clone());
+                                              // Loop/Scope ends, thread finishes, connection drops.
+                                          }
                                      }
                                 }
                             }
@@ -549,6 +603,30 @@ impl Node {
                 }
             },
             Err(e) => println!("UPnP: Gateway not found: {}", e),
+        }
+    }
+
+    pub fn resolve_dns_seeds(&self) {
+        let seeds = vec![
+            "seed1.volt-coin.org", // Placeholder
+            "seed2.volt-project.net",
+        ];
+        
+        let mut peers_lock = self.peers.lock().unwrap();
+        println!("[P2P] Resolving DNS Seeds...");
+        
+        for seed in seeds {
+             if let Ok(lookup) = std::net::ToSocketAddrs::to_socket_addrs(&(seed, self.port)) {
+                 for addr in lookup {
+                      if let std::net::SocketAddr::V4(addr4) = addr {
+                           let ip = addr4.ip().to_string();
+                           if !peers_lock.contains(&ip) {
+                               println!("[P2P] Found Seed Peer: {}", ip);
+                               peers_lock.push(ip);
+                           }
+                      }
+                 }
+             }
         }
     }
 }

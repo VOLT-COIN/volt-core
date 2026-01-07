@@ -142,7 +142,7 @@ impl StratumServer {
                                              current_nonce += 1;
                                              let net_payout = bal - fee;
                                              let mut tx = crate::transaction::Transaction::new(
-                                                 pool_addr.to_string(), miner.clone(), net_payout, "VLT".to_string(), current_nonce
+                                                 pool_addr.to_string(), miner.clone(), net_payout, "VLT".to_string(), current_nonce, 0
                                              );
                                              tx.sign(&signing_key);
                                              txs_to_push.push(tx);

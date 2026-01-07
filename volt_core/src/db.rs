@@ -58,6 +58,26 @@ impl Database {
     pub fn state_orders(&self) -> sled::Result<sled::Tree> { self.db.open_tree("state_orders") }
     pub fn state_tokens(&self) -> sled::Result<sled::Tree> { self.db.open_tree("state_tokens") }
 
+    pub fn remove_block(&self, block: &Block) -> sled::Result<()> {
+        let blocks = self.blocks()?;
+        let txs = self.txs()?;
+        // addr_index is hard to prune without reverse index. 
+        // For MVP, we leave index entries (they might duplicate but won't break logic if checking logic filters).
+        // Actually, we should probably allow index "leak" or implement full reverse index later.
+        
+        // 1. Remove Block
+        blocks.remove(&block.index.to_be_bytes())?;
+        
+        // 2. Remove Transactions
+        for t in &block.transactions {
+             let tx_id = t.get_hash();
+             txs.remove(&tx_id)?;
+        }
+        
+        self.db.flush()?;
+        Ok(())
+    }
+
     pub fn save_block(&self, block: &Block) -> sled::Result<()> {
         let blocks = self.blocks()?;
         let txs = self.txs()?;
@@ -102,6 +122,37 @@ impl Database {
         self.db.flush()?;
         Ok(())
     }
+
+    pub fn get_block(&self, index: u64) -> sled::Result<Option<Block>> {
+        let blocks = self.blocks()?;
+        if let Some(val) = blocks.get(&index.to_be_bytes())? {
+             let block: Block = serde_json::from_slice(&val).unwrap();
+             Ok(Some(block))
+        } else {
+             Ok(None)
+        }
+    }
+
+    pub fn get_last_block(&self) -> sled::Result<Option<Block>> {
+        let blocks = self.blocks()?;
+        if let Some((_key, val)) = blocks.last()? {
+            let block: Block = serde_json::from_slice(&val).unwrap();
+            Ok(Some(block))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn get_highest_index(&self) -> sled::Result<u64> {
+         let blocks = self.blocks()?;
+         if let Some((key, _)) = blocks.last()? {
+             let mut bytes = [0u8; 8];
+             bytes.copy_from_slice(&key);
+             Ok(u64::from_be_bytes(bytes))
+         } else {
+             Ok(0)
+         }
+    }
     
     fn append_tx_to_index(&self, tree: &sled::Tree, addr: &str, tx_id: &str) -> sled::Result<()> {
         // We actally usually store list of TXIDs.
@@ -112,11 +163,15 @@ impl Database {
         Ok(())
     }
 
-    pub fn get_last_block(&self) -> sled::Result<Option<Block>> {
-        let blocks = self.blocks()?;
-        if let Some((_k, v)) = blocks.last()? {
-            let block: Block = serde_json::from_slice(&v).unwrap();
-            Ok(Some(block))
+    pub fn get_transaction(&self, hash_bytes: &[u8]) -> sled::Result<Option<Transaction>> {
+        let txs = self.txs()?;
+        if let Some(val) = txs.get(hash_bytes)? {
+            let tx: Transaction = serde_json::from_slice(&val).unwrap();
+            Ok(Some(tx))
+        } else {
+            Ok(None)
+        }
+    }
         } else {
             Ok(None)
         }

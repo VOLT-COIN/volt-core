@@ -28,6 +28,7 @@ fn default_script() -> Script { Script::new() }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Transaction {
+    pub version: u32, // Added for Longevity
     pub sender: String,
     pub receiver: String,
     pub amount: u64,
@@ -62,7 +63,7 @@ pub struct Transaction {
 }
 
 impl Transaction {
-    pub fn new(sender: String, receiver: String, amount: u64, token: String, nonce: u64) -> Self {
+    pub fn new(sender: String, receiver: String, amount: u64, token: String, nonce: u64, fee: u64) -> Self {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -81,6 +82,7 @@ impl Transaction {
             .push(crate::script::OpCode::OpCheckSig);
 
         Transaction {
+            version: 1,
             sender,
             receiver,
             amount,
@@ -89,7 +91,7 @@ impl Transaction {
             token,
             tx_type: TxType::Transfer,
             nonce,
-            fee: 100_000,
+            fee: if fee == 0 { 100_000 } else { fee }, // Use provided fee or default
             script_pub_key,
             script_sig: Script::new(),
             price: 0,
@@ -103,6 +105,7 @@ impl Transaction {
             .as_secs();
 
         Transaction {
+            version: 1,
             sender: sender.clone(),
             receiver: sender, // Issue to self
             amount: supply,
@@ -122,7 +125,8 @@ impl Transaction {
         // Deterministic Hashing for Cross-Platform Signing (JS <-> Rust)
         // Including price and tx_type to secure DEX orders
         let payload = format!(
-            "{}:{}:{}:{}:{}:{}:{}:{:?}:{}",
+            "{}:{}:{}:{}:{}:{}:{}:{}:{}:{}",
+            self.version, // Include version in hash
             self.sender,
             self.receiver,
             self.amount,
@@ -148,6 +152,7 @@ impl Transaction {
             .as_secs();
 
         Transaction {
+            version: 1,
             sender: sender.clone(),
             receiver: "BURN".to_string(), // Sentinel value, unused by validation
             amount,
@@ -173,6 +178,7 @@ impl Transaction {
         let receiver = if side == "BUY" { "DEX_BUY".to_string() } else { "DEX_SELL".to_string() };
 
         Transaction {
+            version: 1,
             sender,
             receiver,
             amount,
@@ -196,6 +202,7 @@ impl Transaction {
 
         // We use 'token' field to store the Order ID (string format) for cancellation
         Transaction {
+            version: 1,
             sender,
             receiver: "DEX_CANCEL".to_string(),
             amount: 0,
@@ -218,6 +225,7 @@ impl Transaction {
             .as_secs();
 
         Transaction {
+            version: 1,
             sender: sender.clone(),
             receiver: String::from("STAKE_SYSTEM"),
             amount,
@@ -240,6 +248,7 @@ impl Transaction {
             .as_secs();
 
         Transaction {
+            version: 1,
             sender: sender.clone(),
             receiver: sender, // Return to self
             amount,

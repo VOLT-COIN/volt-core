@@ -37,8 +37,10 @@ impl eframe::App for VoltNodeApp {
         // Get Data
         let (height, difficulty, last_hash) = {
             let chain = self.blockchain.lock().unwrap();
-            let last = chain.chain.last().unwrap();
-            (chain.chain.len(), chain.difficulty, last.hash.clone())
+            let last = chain.get_last_block(); // Returns Option<Block>
+            let height = chain.get_height() as usize;
+            let hash = last.as_ref().map(|b| b.hash.clone()).unwrap_or_else(|| "Genesis".to_string());
+            (height, chain.difficulty, hash)
         };
         
         let mut mining = self.mining_enabled.lock().unwrap();
