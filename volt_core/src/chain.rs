@@ -402,6 +402,7 @@ impl Blockchain {
         
         // FIX: Enforce Deterministic Genesis Timestamp and Hash for network compatibility
         genesis_block.timestamp = 1767077203;
+        genesis_block.proof_of_work = 0; // Deterministic Nonce (Required for consistent Genius Hash)
         
         // FIX: Hardcode Merkle Root to match Remote Network
         // Remote Merkle: 9ade8308c25fc33e1a6ee8d5981c10eea693691583d8a17acb8207b244fda116
