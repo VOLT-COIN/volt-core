@@ -631,11 +631,7 @@ fn handle_request(
                      return ApiResponse { status: "error".to_string(), message: "Encryption Failed".to_string(), data: None };
                 }
                 
-                // Clear memory
-                let mut wallet_lock = wallet.lock().unwrap();
-                *wallet_lock = Wallet::new();
-                
-                ApiResponse { status: "success".to_string(), message: "Wallet Encrypted & Locked".to_string(), data: None }
+                // (End of encrypt_wallet)
             } else {
                  ApiResponse { status: "error".to_string(), message: "Missing password".to_string(), data: None }
             }
@@ -666,11 +662,8 @@ fn handle_request(
                  let next_nonce = current_nonce + 1;
 
                  let mut tx = Transaction::new_stake(sender, amt, next_nonce);
-                 {
-                     let w_guard = wallet.lock().unwrap();
-                     if let Some(pk) = &w_guard.private_key {
-                        tx.sign(pk);
-                     }
+                 if let Some(pk) = &wallet.private_key {
+                    tx.sign(pk);
                  }
                  
                  if chain.create_transaction(tx) {
@@ -697,11 +690,8 @@ fn handle_request(
                  let next_nonce = current_nonce + 1;
 
                  let mut tx = Transaction::new_unstake(sender, amt, next_nonce);
-                 {
-                     let w_guard = wallet.lock().unwrap();
-                     if let Some(pk) = &w_guard.private_key {
-                        tx.sign(pk);
-                     }
+                 if let Some(pk) = &wallet.private_key {
+                    tx.sign(pk);
                  }
                  
                  if chain.create_transaction(tx) {
@@ -731,11 +721,8 @@ fn handle_request(
                  let next_nonce = current_nonce + 1;
                  
                  let mut tx = Transaction::new_order(sender, token, &side, amount, price, next_nonce);
-                 {
-                     let w_guard = wallet.lock().unwrap();
-                     if let Some(pk) = &w_guard.private_key {
-                        tx.sign(pk);
-                     }
+                 if let Some(pk) = &wallet.private_key {
+                    tx.sign(pk);
                  }
                  
                  if chain.create_transaction(tx) {
@@ -762,11 +749,8 @@ fn handle_request(
                  let next_nonce = current_nonce + 1;
                  
                  let mut tx = Transaction::new_cancel(sender, id, next_nonce);
-                 {
-                     let w_guard = wallet.lock().unwrap();
-                     if let Some(pk) = &w_guard.private_key {
-                        tx.sign(pk);
-                     }
+                 if let Some(pk) = &wallet.private_key {
+                    tx.sign(pk);
                  }
                  
                  // Check if order exists before sending tx? No, chain validation handles it.

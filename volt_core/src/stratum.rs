@@ -184,7 +184,7 @@ impl StratumServer {
 fn process_rpc_request(
     req: RpcRequest,
     chain: &Arc<Mutex<Blockchain>>,
-    mode_ref: &Arc<Mutex<PoolMode>>,
+    _mode_ref: &Arc<Mutex<PoolMode>>,
     shares_ref: &Arc<Mutex<Vec<Share>>>,
     session_miner_addr: &Arc<Mutex<String>>,
     current_block_template: &Arc<Mutex<Option<crate::block::Block>>>,
@@ -472,7 +472,7 @@ fn handle_client_ws(
                  
                 let reward = next_block.transactions[0].amount;
                 let amt_hex = hex::encode(reward.to_le_bytes());
-                let h_bytes = (next_block.index as u32).to_le_bytes();
+                let _h_bytes = (next_block.index as u32).to_le_bytes();
                 let h_bytes = (next_block.index as u32).to_le_bytes();
                 // Fix: Use 0c (PUSH 12)
                 let h_push = format!("0c{}", hex::encode(h_bytes));

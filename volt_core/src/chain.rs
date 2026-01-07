@@ -332,7 +332,7 @@ impl Blockchain {
             db, 
         };
 
-        let mut wipe_db = false;
+        let wipe_db = false;
 
         // Clone DB reference to avoid borrow conflict with mutable `create_genesis_block`
         if let Some(db) = blockchain.db.clone() {
@@ -641,7 +641,7 @@ impl Blockchain {
                  };
                  
                  // 3. MATCHING ENGINE (Optimized)
-                 let mut filled = false;
+                 let _filled = false;
                  
                  // Collect matches (Price Priority)
                  // If BUY, match against ASKS (Sell orders). Lowest price first.
