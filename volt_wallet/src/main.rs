@@ -755,7 +755,7 @@ impl eframe::App for WalletApp {
                                 let amt = self.send_amount.parse::<f64>().unwrap_or(0.0);
                                 let atomic_amount = (amt * 100_000_000.0) as u64;
                                 
-                                let node_url = "http://127.0.0.1:7862"; // Default to Local Node
+                                // let _node_url = "http://127.0.0.1:7862"; // Default to Local Node
                                 let base_fee = atomic_amount / 1000; // 0.1%
                                 let congestion_surcharge = self.pending_txs * 100_000_000; // 1 VLT per tx
                                 let calc_fee = base_fee + congestion_surcharge;
