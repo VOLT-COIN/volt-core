@@ -19,7 +19,6 @@ pub enum TxType {
     Swap,
     IssueNFT,
     TransferNFT,
-
     BurnNFT,
     DeployContract,
     CallContract
@@ -67,7 +66,6 @@ pub struct Transaction {
     pub script_sig: Script,     // Unlocking Script (Sender)
 
     // Phase 34: DEX
-    #[serde(default)]
     #[serde(default)]
     pub price: u64, // For Limit Orders (VLT per Token Unit)
 
@@ -277,8 +275,6 @@ impl Transaction {
             script_pub_key: Script::new(),
             script_sig: Script::new(),
             price: 0,
-        }
-            price: 0,
             data: vec![],
         }
     }
@@ -370,7 +366,6 @@ impl Transaction {
                  TxType::RemoveLiquidity => 8,
                  TxType::Swap => 9,
                  TxType::IssueNFT => 10,
-                 TxType::TransferNFT => 11,
                  TxType::TransferNFT => 11,
                  TxType::BurnNFT => 12,
                  TxType::DeployContract => 13,
