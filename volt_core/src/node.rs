@@ -21,6 +21,12 @@ pub enum Message {
     Peers(Vec<String>),
     FindNode(crate::kademlia::NodeId),
     Neighbors(Vec<crate::kademlia::Peer>),
+    // SPV Support
+    GetHeaders { locator: String }, // locator = last known block hash
+    Headers(Vec<Block>), // Send only headers (Block struct has data, but we can verify PoW)
+    // P2P Hardening
+    Ping,
+    Pong,
 }
 
 pub struct Node {
@@ -245,7 +251,29 @@ impl Node {
                                         }
                                         if added > 0 { println!("[P2P] Discovered {} new peers!", added); }
                                         Ok(None)
-                                    }
+                                    },
+                                    Message::GetHeaders { locator } => {
+                                        // SPV: Return next 2000 headers starting after 'locator'
+                                        // Simplified: Just find locator and send next batch
+                                        let chain = chain_inner.lock().unwrap();
+                                        // Basic implementation: Scan blocks (Inefficient but works for MVP)
+                                        // In prod: Use index map
+                                        let all = chain.get_all_blocks();
+                                        let start_idx = all.iter().position(|b| b.hash == locator).map(|i| i + 1).unwrap_or(0);
+                                        
+                                        let end_idx = std::cmp::min(start_idx + 2000, all.len());
+                                        let headers = if start_idx < all.len() {
+                                             all[start_idx..end_idx].to_vec()
+                                        } else { vec![] };
+                                        
+                                        Ok(Some(Message::Headers(headers)))
+                                    },
+                                    Message::Headers(_) => {
+                                        // Client side handling (Not needed for Full Node, but good for completeness)
+                                        Ok(None)
+                                    },
+                                    Message::Ping => Ok(Some(Message::Pong)),
+                                    Message::Pong => Ok(None),
                                 }
                             };
 
@@ -631,6 +659,21 @@ impl Node {
                              }
                          }
                     }
+                }
+
+                // 3. P2P Hardening: Ping Verification (Keep-Alive)
+                // Randomly ping a few peers to check liveness
+                if let Ok(p_lock) = peers_ref.lock() {
+                     for peer in p_lock.iter().take(3) {
+                         // Quick connect and ping
+                         if let Ok(mut stream) = TcpStream::connect(peer) {
+                              let ping_msg = Message::Ping;
+                              let _ = stream.write_all(serde_json::to_string(&ping_msg).unwrap_or_default().as_bytes());
+                              // We don't block waiting for Pong here to keep loop fast.
+                              // Peer will respond with Pong, handled by process_message if we kept connection open.
+                              // For ephemeral checks, successful write is "good enough" for basic connectivity.
+                         }
+                     }
                 }
 
                 // Sleep AFTER the first run
