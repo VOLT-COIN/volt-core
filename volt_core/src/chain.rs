@@ -950,12 +950,15 @@ impl Blockchain {
                  if self.get_balance(sender, &lp_token) < shares { return false; }
                  
                  // 1. Calculate Amounts
-                 let (amount_a, amount_b, token_a, token_b) = {
-                     let pool = self.state.pools.get(&pool_id).unwrap();
-                     let a = (shares * pool.reserve_a) / pool.total_shares;
-                     let b = (shares * pool.reserve_b) / pool.total_shares;
-                     (a, b, pool.token_a.clone(), pool.token_b.clone())
-                 };
+                  let (amount_a, amount_b, token_a, token_b) = {
+                      if let Some(pool) = self.state.pools.get(&pool_id) {
+                          let a = (shares * pool.reserve_a) / pool.total_shares;
+                          let b = (shares * pool.reserve_b) / pool.total_shares;
+                          (a, b, pool.token_a.clone(), pool.token_b.clone())
+                      } else {
+                          return false;
+                      }
+                  };
                  
                  if amount_a == 0 && amount_b == 0 { return false; }
                  
@@ -963,13 +966,14 @@ impl Blockchain {
                  let old_lp = self.get_balance(sender, &lp_token);
                  self.set_balance(sender, &lp_token, old_lp - shares);
                  
-                 // 3. Update Pool
-                 {
-                     let pool = self.state.pools.get_mut(&pool_id).unwrap();
-                     pool.total_shares -= shares;
-                     pool.reserve_a -= amount_a;
-                     pool.reserve_b -= amount_b;
-                 }
+                  // 3. Update Pool
+                  if let Some(pool) = self.state.pools.get_mut(&pool_id) {
+                       pool.total_shares -= shares;
+                       pool.reserve_a -= amount_a;
+                       pool.reserve_b -= amount_b;
+                  } else {
+                       return false;
+                  }
                  
                  // 4. Credit Assets
                  let old_a = self.get_balance(sender, &token_a);
@@ -986,22 +990,25 @@ impl Blockchain {
                  let input_amount = transaction.amount;
                  let min_output = transaction.price; 
                  
-                 let (token_in, token_out, output_amount) = {
-                     let pool = self.state.pools.get(&pool_id).unwrap();
-                     let (rin, rout, t_in, t_out) = if is_a_to_b {
-                        (pool.reserve_a, pool.reserve_b, pool.token_a.clone(), pool.token_b.clone())
-                     } else {
-                        (pool.reserve_b, pool.reserve_a, pool.token_b.clone(), pool.token_a.clone())
-                     };
-                     
-                     let input_with_fee = input_amount * 997;
-                     let numerator = input_with_fee * rout;
-                     let denominator = (rin * 1000) + input_with_fee;
-                     let output = numerator / denominator;
-                     
-                     if output < min_output { return false; }
-                     (t_in, t_out, output)
-                 };
+                  let (token_in, token_out, output_amount) = {
+                      if let Some(pool) = self.state.pools.get(&pool_id) {
+                          let (rin, rout, t_in, t_out) = if is_a_to_b {
+                              (pool.reserve_a, pool.reserve_b, pool.token_a.clone(), pool.token_b.clone())
+                          } else {
+                              (pool.reserve_b, pool.reserve_a, pool.token_b.clone(), pool.token_a.clone())
+                          };
+                          
+                          let input_with_fee = input_amount * 997;
+                          let numerator = input_with_fee * rout;
+                          let denominator = (rin * 1000) + input_with_fee;
+                          let output = numerator / denominator;
+                          
+                          if output < min_output { return false; }
+                          (t_in, t_out, output)
+                      } else {
+                           return false;
+                      }
+                  };
                  
                  // 1. Debit Input
                  let bal_in = self.get_balance(sender, &token_in);
@@ -1010,14 +1017,18 @@ impl Blockchain {
                  
                  // 2. Update Pool
                  {
-                     let pool = self.state.pools.get_mut(&pool_id).unwrap();
-                     if is_a_to_b {
-                         pool.reserve_a += input_amount;
-                         pool.reserve_b -= output_amount;
-                     } else {
-                         pool.reserve_b += input_amount;
-                         pool.reserve_a -= output_amount;
-                     }
+                     if let Some(pool) = self.state.pools.get_mut(&pool_id) {
+                          if is_a_to_b {
+                              pool.reserve_a += input_amount;
+                              pool.reserve_b -= output_amount;
+                          } else {
+                              pool.reserve_b += input_amount;
+                              pool.reserve_a -= output_amount;
+                          }
+                      } else {
+                          // Loop logic would have failed earlier if pool missing, but safe fallback
+                          return false;
+                      }
                  }
                  
                  // 3. Credit Output
@@ -1372,7 +1383,7 @@ impl Blockchain {
               return false;
          }
 
-         let last = self.get_last_block().unwrap();
+         let last = self.get_last_block().unwrap_or(self.create_genesis_block());
          if block.previous_hash != last.hash || block.index != last.index + 1 {
               println!("[Security] Invalid Previous Hash or Index");
               return false;
@@ -1391,7 +1402,7 @@ impl Blockchain {
 
          // 5. Verify Timestamp (Time Warp Protection)
          // 5. Verify Timestamp (Time Warp Protection - MTP Rule)
-         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or(std::time::Duration::from_secs(0)).as_secs();
          let mtp = self.get_median_time_past();
          
          if block.timestamp <= mtp {
@@ -1441,7 +1452,7 @@ impl Blockchain {
          let confirmed: HashSet<Vec<u8>> = block.transactions.iter().map(|tx| tx.get_hash()).collect();
          self.pending_transactions.retain(|tx| !confirmed.contains(&tx.get_hash()));
 
-         println!("[Core] Block {} accepted. New Tip: {}", self.get_height(), self.tip.as_ref().unwrap().hash);
+         println!("[Core] Block {} accepted. New Tip: {}", self.get_height(), self.tip.as_ref().map(|b| b.hash.clone()).unwrap_or_default());
          true
     }
 
