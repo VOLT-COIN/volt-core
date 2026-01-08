@@ -528,6 +528,15 @@ fn handle_client(
                 if let Ok(s) = serde_json::to_string(&resp) {
                     let _ = stream_writer_resp.write_all((s + "\n").as_bytes());
                 }
+                // FIX: Send Explicit Difficulty Notification after Subscribe
+                if req.method == "mining.subscribe" {
+                    let diff_notify = serde_json::json!({
+                        "id": null, "method": "mining.set_difficulty", "params": [0.001]
+                    });
+                    if let Ok(s) = serde_json::to_string(&diff_notify) {
+                         let _ = stream_writer_resp.write_all((s + "\n").as_bytes());
+                    }
+                }
             }
         }
     }
@@ -631,6 +640,15 @@ fn handle_client_ws(
                             let resp = RpcResponse { id: req.id, result: Some(val), error: None };
                             if let Ok(s) = serde_json::to_string(&resp) {
                                 let _ = socket.send(Message::Text(s));
+                            }
+                            // FIX: Send Explicit Difficulty Notification after Subscribe
+                            if req.method == "mining.subscribe" {
+                                let diff_notify = serde_json::json!({
+                                    "id": null, "method": "mining.set_difficulty", "params": [0.001]
+                                });
+                                if let Ok(s) = serde_json::to_string(&diff_notify) {
+                                     let _ = socket.send(Message::Text(s));
+                                }
                             }
                         }
                     }
