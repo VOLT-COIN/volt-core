@@ -5,9 +5,11 @@ use std::thread;
 use serde::{Serialize, Deserialize};
 use serde_json::Value;
 use crate::chain::Blockchain;
+use crate::vm::WasmVM;
 use crate::wallet::Wallet;
 use crate::transaction::Transaction;
 use crate::node::Node;
+use crate::vm::Storage;
 use crate::stratum::Share;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -77,7 +79,6 @@ impl ApiServer {
             wallet, // Use shared wallet
             is_locked: Arc::new(Mutex::new(false)), // Deprecated, but keeping struct field for now to avoid huge refactor. We will ignore it.
             port,
-            port,
             node,
             shares,
         }
@@ -141,15 +142,16 @@ impl ApiServer {
                                     }
                                 }
 
-                                let response = handle_request(
-                                    &json_str, 
-                                    chain_ref, 
-                                    mining_ref, 
-                                    wallet_ref, 
-                                    lock_ref,
-                                    node_ref,
-                                    peer_addr 
-                                );
+                                    let response = handle_request(
+                                        &json_str,
+                                        chain_ref.clone(), 
+                                        mining_ref.clone(), 
+                                        wallet_ref.clone(), 
+                                        lock_ref.clone(),
+                                        node_ref.clone(),
+                                        peer_addr,
+                                        shares_ref.clone()
+                                    );
                                 let response_json = serde_json::to_string(&response).unwrap_or(String::from("{\"status\":\"error\",\"message\":\"JSON Serialization Failed\"}")) + "\n";
                                 
                                 if is_http {
@@ -180,7 +182,8 @@ fn handle_request(
     wallet: Arc<Mutex<Wallet>>,
     is_locked: Arc<Mutex<bool>>,
     node: Arc<Node>,
-    peer_addr: std::net::SocketAddr
+    peer_addr: std::net::SocketAddr,
+    shares: Arc<Mutex<Vec<Share>>>
 ) -> ApiResponse {
     // Parse Request
     let req: ApiRequest = match serde_json::from_str(req_str) {
@@ -310,7 +313,7 @@ fn handle_request(
             // Calculate Pool Hashrate (Window: 60s)
             let mut pool_hashrate = 0.0;
             {
-                let shares = shares_ref.lock().unwrap();
+                let shares_guard = shares.lock().unwrap();
                 let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
                 let window = 60;
                 let mut total_difficulty = 0.0;
