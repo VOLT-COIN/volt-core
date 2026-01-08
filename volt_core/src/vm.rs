@@ -10,6 +10,8 @@ pub struct ContractEnv {
     pub _storage: Arc<Mutex<Storage>>,
 }
 
+
+pub struct WasmVM {
     store: Store,
     instance: Instance,
     _env: FunctionEnv<ContractEnv>,
