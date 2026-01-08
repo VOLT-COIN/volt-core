@@ -198,7 +198,7 @@ const Contracts = () => {
                                             {Object.entries(contractData.storage).map(([k, v]) => (
                                                 <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px' }}>
                                                     <span style={{ color: '#ccc' }}>{k}</span>
-                                                    <span style={{ fontFamily: 'monospace', color: '#fbbf24' }}>{v.substr(0, 16)}...</span>
+                                                    <span style={{ fontFamily: 'monospace', color: '#fbbf24' }}>{(v || "").substr(0, 16)}...</span>
                                                 </div>
                                             ))}
                                         </div>

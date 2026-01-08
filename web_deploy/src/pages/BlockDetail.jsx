@@ -82,11 +82,11 @@ function BlockDetail() {
                     <div key={i} className="hover-row" style={{ padding: '20px', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
                             <div style={{ color: '#f472b6', fontFamily: 'monospace', cursor: 'pointer', marginBottom: '5px' }} onClick={() => navigate('/tx/' + tx.hash)}>
-                                {tx.hash.substr(0, 32)}...
+                                {(tx.hash || "").substr(0, 32)}...
                             </div>
                             <div style={{ display: 'flex', gap: '10px', fontSize: '0.75rem', color: '#666' }}>
                                 <span>{tx.tx_type}</span>
-                                <span>{tx.sender.substr(0, 12)}...</span>
+                                <span>{(tx.sender || "").substr(0, 12)}...</span>
                             </div>
                         </div>
                         <div style={{ textAlign: 'right' }}>

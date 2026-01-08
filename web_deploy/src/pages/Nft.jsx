@@ -151,7 +151,7 @@ function Nft() {
                             <img src={nft.uri} alt={nft.id} style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => e.target.src = 'https://via.placeholder.com/200?text=No+Image'} />
                         </div>
                         <h4>{nft.id}</h4>
-                        <p style={{ fontSize: '0.7rem', color: '#888', wordBreak: 'break-all' }}>Owner: {nft.owner.substr(0, 10)}...</p>
+                        <p style={{ fontSize: '0.7rem', color: '#888', wordBreak: 'break-all' }}>Owner: {(nft.owner || "").substr(0, 10)}...</p>
                     </div>
                 ))}
             </div>
