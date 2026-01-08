@@ -347,12 +347,12 @@ fn process_rpc_request(
                                              // Wallet struct fields are pub? Yes.
                                              if let Some(pk) = &sw.private_key {
                                                 use k256::ecdsa::signature::Signer;
-                                                let signature: k256::ecdsa::Signature = pk.sign(tx.get_signable_bytes().as_slice());
+                                                let signature: k256::ecdsa::Signature = pk.sign(&tx.get_hash());
                                                 let mut signed_tx = tx.clone();
                                                 signed_tx.signature = hex::encode(signature.to_bytes());
                                                 
                                                 println!("[PPLNS] Paying {} VLT to {}", amount / 1e8, miner);
-                                                chain_lock.add_pending_transaction(signed_tx);
+                                                chain_lock.pending_transactions.push(signed_tx);
                                              }
                                         }
                                     }
@@ -411,7 +411,8 @@ fn handle_client(
     stream: TcpStream, 
     chain: Arc<Mutex<Blockchain>>, 
     mode_ref: Arc<Mutex<PoolMode>>,
-    shares_ref: Arc<Mutex<Vec<Share>>>
+    shares_ref: Arc<Mutex<Vec<Share>>>,
+    wallet_ref: Arc<Mutex<Wallet>> // Added missing arg
 ) {
     let peer_addr = stream.peer_addr().unwrap_or(std::net::SocketAddr::from(([0,0,0,0], 0)));
     println!("[Stratum TCP] Client connected: {}", peer_addr);
