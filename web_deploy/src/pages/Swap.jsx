@@ -3,7 +3,7 @@ import axios from 'axios';
 import { signTransaction } from '../utils/wallet';
 import Chart from '../components/Chart';
 
-const API_URL = "http://localhost:6001/api";
+import { API_URL } from '../config';
 
 function Swap() {
     const [pools, setPools] = useState([]);

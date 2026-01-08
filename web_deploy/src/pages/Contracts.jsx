@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
 import { Container, Alert, Tabs, Tab } from 'react-bootstrap';
+import { API_URL } from '../config';
 
 const Contracts = () => {
     const [key, setKey] = useState('deploy');
@@ -21,7 +22,7 @@ const Contracts = () => {
 
     const apiCall = async (command, params) => {
         try {
-            const res = await fetch('http://localhost:1337', {
+            const res = await fetch(API_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ command, ...params })

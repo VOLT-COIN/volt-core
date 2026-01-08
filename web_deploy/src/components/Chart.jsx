@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createChart } from 'lightweight-charts';
 import axios from 'axios';
 
-const API_URL = "http://localhost:6001/api";
+import { API_URL } from '../config';
 
 const Chart = ({ pair }) => {
     const chartContainerRef = useRef();

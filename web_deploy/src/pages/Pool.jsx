@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { signTransaction } from '../utils/wallet';
 
-const API_URL = "http://localhost:6001/api";
+import { API_URL } from '../config';
 
 function Pool() {
     const [pools, setPools] = useState([]);
