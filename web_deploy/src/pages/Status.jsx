@@ -106,7 +106,7 @@ function Status() {
                 <StatusCard
                     label="Mining Difficulty"
                     value={metrics.difficulty}
-                    subtext="Argon2d PoW"
+                    subtext="SHA-256d PoW"
                     icon="⛏️"
                     color="#f59e0b"
                 />
