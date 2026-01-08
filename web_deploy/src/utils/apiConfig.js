@@ -1,5 +1,7 @@
+import { NODE_URL } from '../config';
+
 export const getApiConfig = () => {
-    let url = 'http://82.201.143.174';
+    let url = NODE_URL;
     // Normalize URL: Ensure http:// or https://
     if (url && !url.startsWith('http')) {
         url = 'http://' + url;
