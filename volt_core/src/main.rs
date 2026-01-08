@@ -119,13 +119,17 @@ fn main() {
     let api_port = 7862; // STANDARD API PORT (Behind Nginx)
     let stratum_base = if port == 6000 { 3333 } else { port + 2000 };
 
+    // Shared Mining Shares
+    let shares = Arc::new(Mutex::new(Vec::new()));
+
     // 5. API Server
     let api_server = ApiServer::new(
         blockchain.clone(),
         is_mining.clone(),
         miner_wallet.clone(),
         api_port,
-        node.clone()
+        node.clone(),
+        shares.clone()
     );
     api_server.start();
 
@@ -133,7 +137,7 @@ fn main() {
 
     // 7. Stratum Servers
     log(&format!("[Stratum] Starting Single PPLNS Server (Port: {})...", stratum_base), &logs);
-    let s1 = StratumServer::new(blockchain.clone(), stratum_base, stratum::PoolMode::PPLNS); s1.start();
+    let s1 = StratumServer::new(blockchain.clone(), stratum_base, stratum::PoolMode::PPLNS, shares.clone()); s1.start();
     // let s2 = StratumServer::new(blockchain.clone(), stratum_base + 1, stratum::PoolMode::PPS); s2.start();
     // let s3 = StratumServer::new(blockchain.clone(), stratum_base + 2, stratum::PoolMode::SOLO); s3.start();
     // let s4 = StratumServer::new(blockchain.clone(), stratum_base + 3, stratum::PoolMode::FPPS); s4.start();

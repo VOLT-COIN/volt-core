@@ -8,6 +8,8 @@ use crate::chain::Blockchain;
 use crate::wallet::Wallet;
 use crate::transaction::Transaction;
 use crate::node::Node;
+use crate::stratum::Share;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Serialize, Deserialize, Debug)]
 struct ApiRequest {
@@ -57,6 +59,7 @@ pub struct ApiServer {
     is_locked: Arc<Mutex<bool>>, // Track if wallet is locked
     port: u16,
     node: Arc<Node>,
+    shares: Arc<Mutex<Vec<Share>>>,
 }
 
 impl ApiServer {
@@ -65,7 +68,8 @@ impl ApiServer {
         mining_status: Arc<Mutex<bool>>,
         wallet: Arc<Mutex<Wallet>>, // Shared Wallet
         port: u16,
-        node: Arc<Node>
+        node: Arc<Node>,
+        shares: Arc<Mutex<Vec<Share>>>
     ) -> Self {
         ApiServer {
             blockchain,
@@ -73,7 +77,9 @@ impl ApiServer {
             wallet, // Use shared wallet
             is_locked: Arc::new(Mutex::new(false)), // Deprecated, but keeping struct field for now to avoid huge refactor. We will ignore it.
             port,
+            port,
             node,
+            shares,
         }
     }
 
@@ -84,6 +90,7 @@ impl ApiServer {
         let wallet = self.wallet.clone();
         let is_locked = self.is_locked.clone();
         let node = self.node.clone();
+        let shares = self.shares.clone();
 
         thread::spawn(move || {
             let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).expect("Failed to bind API port");
@@ -98,6 +105,7 @@ impl ApiServer {
 
                         let lock_ref = is_locked.clone();
                         let node_ref = node.clone();
+                        let shares_ref = shares.clone();
                         
                         let peer_addr = match stream.peer_addr() {
                             Ok(addr) => addr,
@@ -299,6 +307,23 @@ fn handle_request(
             let height = chain.get_height() as usize;
             let last_hash = chain.get_last_block().map(|b| b.hash).unwrap_or("0".to_string());
             
+            // Calculate Pool Hashrate (Window: 60s)
+            let mut pool_hashrate = 0.0;
+            {
+                let shares = shares_ref.lock().unwrap();
+                let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+                let window = 60;
+                let mut total_difficulty = 0.0;
+                for s in shares.iter() {
+                    if now >= s.timestamp && now - s.timestamp <= window {
+                        total_difficulty += s.difficulty;
+                    }
+                }
+                if total_difficulty > 0.0 {
+                    pool_hashrate = (total_difficulty * 4294967296.0) / (window as f64);
+                }
+            }
+            
             ApiResponse {
                 status: "success".to_string(),
                 message: "Chain info retrieved".to_string(),
@@ -307,7 +332,8 @@ fn handle_request(
                     "difficulty": chain.difficulty,
                     "last_hash": last_hash,
                     "pending_count": chain.pending_transactions.len(),
-                    "peers": node.peers.lock().unwrap().len()
+                    "peers": node.peers.lock().unwrap().len(),
+                    "pool_hashrate": pool_hashrate
                 }))
             }
         },

@@ -9,7 +9,9 @@ function Status() {
         height: 0,
         difficulty: 0,
         peers: 0,
+        peers: 0,
         mempool: 0,
+        pool_hashrate: 0,
         last_hash: '...'
     });
 
@@ -33,6 +35,7 @@ function Status() {
                     difficulty: data.difficulty || 0,
                     peers: data.peers || 0,
                     mempool: data.pending_count || 0,
+                    pool_hashrate: data.pool_hashrate || 0,
                     last_hash: data.last_hash || 'None'
                 });
             } else {
@@ -41,6 +44,14 @@ function Status() {
         } catch (e) {
             setMetrics(prev => ({ ...prev, api_status: 'Offline' }));
         }
+    };
+
+    const formatHashrate = (hs) => {
+        if (!hs) return '0 H/s';
+        if (hs >= 1e9) return (hs / 1e9).toFixed(2) + ' GH/s';
+        if (hs >= 1e6) return (hs / 1e6).toFixed(2) + ' MH/s';
+        if (hs >= 1e3) return (hs / 1e3).toFixed(2) + ' KH/s';
+        return hs.toFixed(0) + ' H/s';
     };
 
     const StatusCard = ({ label, value, subtext, icon, color = '#10b981' }) => (
@@ -105,6 +116,13 @@ function Status() {
                     subtext="Pending Transactions"
                     icon="⏳"
                     color="#ec4899"
+                />
+                <StatusCard
+                    label="Pool Hashrate"
+                    value={formatHashrate(metrics.pool_hashrate)}
+                    subtext="Real-time (60s avg)"
+                    icon="🚀"
+                    color="#f43f5e"
                 />
                 <StatusCard
                     label="EVM Engine"

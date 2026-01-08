@@ -34,10 +34,12 @@ pub enum PoolMode {
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
-struct Share {
-    miner: String,
-    difficulty: f64,
-    timestamp: u64,
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct Share {
+    pub miner: String,
+    pub difficulty: f64,
+    pub timestamp: u64,
 }
 
 const _POOL_FEE: f64 = 0.0; 
@@ -50,12 +52,12 @@ pub struct StratumServer {
 }
 
 impl StratumServer {
-    pub fn new(blockchain: Arc<Mutex<Blockchain>>, port: u16, mode: PoolMode) -> Self {
+    pub fn new(blockchain: Arc<Mutex<Blockchain>>, port: u16, mode: PoolMode, shares: Arc<Mutex<Vec<Share>>>) -> Self {
         StratumServer { 
             blockchain, 
             port,
             pool_mode: Arc::new(Mutex::new(mode)),
-            shares: Arc::new(Mutex::new(Vec::new())),
+            shares,
         }
     }
 
