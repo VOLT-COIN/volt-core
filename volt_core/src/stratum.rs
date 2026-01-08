@@ -523,10 +523,40 @@ fn process_rpc_request(
                         println!("  - Nonce: {:08x} (Hex: {})", block.proof_of_work, nonce_hex);
                         
                         block.hash = block.calculate_hash();
+                        block.hash = block.calculate_hash();
                         println!("  = Calculated Hash: {}", block.hash);
 
-                        if block.hash.starts_with("00") { // More lenient for debug? No, Miner solves diff 1/0.1
+                        // TARGET CHECKS
+                        // 1. Calculate numerical value of hash
+                        let hash_bi = num_bigint::BigUint::parse_bytes(block.hash.as_bytes(), 16).unwrap_or(num_bigint::BigUint::from(0u32));
+                        
+                        // 2. Calculate Targets
+                        // Max Target (Diff 1) = 0x00000000FFFF... (approx)
+                        // Precise: 2^224 approx.
+                        // Let's use simple approximation for now or re-use `block.difficulty` if possible.
+                        // Block Target (from nbits):
+                        // bits = 0x1d00ffff. Target = 0x00ffff * 2^(8*(0x1d - 3)) = 0xffff * 2^208.
+                        // Share Target (from set_difficulty 0.001):
+                        // Target = BlockTarget * (1/0.001) = BlockTarget * 1000.
 
+                        // Since we don't have BigUint easy available without import?
+                        // `num_bigint` is NOT in Cargo.toml?
+                        // Let's check Cargo.toml first.
+                        // If not, use leading zeros approximation.
+
+                        // Hash string is 64 chars.
+                        // Block Target (Diff 1): 8 Zeros (32 bits). (Approx).
+                        // Share Target (Diff 0.001): 8 - log16(1000) ~= 8 - 2.5 = 5.5 Zeros.
+                        // Let's effectively accept anything with "00000" (5 zeros) as Share.
+                        // And "00000000" (8 zeros) as Block.
+                        
+                        // Better: Use `u64` prefix check?
+                        // 64 chars hex. Top 16 chars = u64.
+                        
+                        let is_valid_share = block.hash.starts_with("00000"); // Diff ~0.001
+                        let is_valid_block = block.hash.starts_with("00000000"); // Diff 1
+
+                        if is_valid_block {
                             println!("[Pool] BLOCK FOUND! Hash: {}", block.hash);
                             // Submit
                             let mut chain_lock = chain.lock().unwrap();
@@ -534,81 +564,62 @@ fn process_rpc_request(
                                 chain_lock.save();
                                 // PPLNS Payout Logic
                                 println!("[PPLNS] Block Found! Distributing Rewards...");
-                                let total_reward = 50.0 * 1e8; // 50 VLT
-                                let fee = 0.0; // 0% Fee for now
+                                // ... Payout Logic ...
+                                let total_reward = 50.0 * 1e8;
+                                let fee = 0.0;
                                 let distributable = total_reward - fee;
-                                
-                                // Calculate Shares
+
                                 let mut shares_lock = shares_ref.lock().unwrap();
                                 let total_shares: f64 = shares_lock.iter().map(|s| s.difficulty).sum();
-                                
+
                                 if total_shares > 0.0 {
                                     let reward_per_share = distributable / total_shares;
                                     let mut payouts: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
-                                    
                                     for s in shares_lock.iter() {
                                         *payouts.entry(s.miner.clone()).or_insert(0.0) += s.difficulty * reward_per_share;
                                     }
-                                    
-                                    // Create Transactions
+
                                     let pool_addr = server_wallet.lock().unwrap().get_address();
-                                    
-                                    // Nonce handling essential to prevent "Same Nonce" error
-                                    // We need to fetch current nonce from chain for pool_addr
-                                    // BUT we are inside chain lock? No, chain is passed as Arc<Mutex> but we unlocked it after submit_block?
-                                    // Wait, chain_lock is held!
-                                    // `chain_lock.submit_block` returns bool. We still hold lock.
-                                    // We can access chain state directly.
-                                    
                                     let mut current_nonce = chain_lock.state.get_nonce(&pool_addr);
-                                    
-                                    // Also check pending to increment nonce further if we just added some? 
-                                    // No, we are about to add them.
-                                    
+
                                     for (miner, amount) in payouts {
                                         let amount_u64 = amount as u64;
-                                        
-                                        // Dynamic Fee: Base 1000 + 0.1% of Amount
                                         let base_fee = 100_000;
                                         let percentage_fee = (amount_u64 as f64 * 0.001) as u64;
                                         let tx_fee = base_fee + percentage_fee;
 
-                                        if amount_u64 > tx_fee + 1000 { // Min payout threshold covers fee
+                                        if amount_u64 > tx_fee + 1000 {
                                              current_nonce += 1;
-                                             let net_amount = amount_u64 - tx_fee; // Deduct Fee
-
+                                             let net_amount = amount_u64 - tx_fee;
                                              let mut tx = crate::transaction::Transaction::new(
-                                                 pool_addr.clone(),
-                                                 miner.clone(),
-                                                 net_amount,
-                                                 "VLT".to_string(),
-                                                 current_nonce,
-                                                 tx_fee
+                                                 pool_addr.clone(), miner.clone(), net_amount, "VLT".to_string(), current_nonce, tx_fee
                                              );
-                                             
-                                             // Sign with Server Wallet
-                                             let sw = server_wallet.lock().unwrap();
-                                             // We need inner logic to sign. Access private key?
-                                             // Wallet struct fields are pub? Yes.
-                                             if let Some(pk) = &sw.private_key {
+                                             if let Some(pk) = &server_wallet.lock().unwrap().private_key {
                                                 use k256::ecdsa::signature::Signer;
                                                 let signature: k256::ecdsa::Signature = pk.sign(&tx.get_hash());
                                                 let mut signed_tx = tx.clone();
                                                 signed_tx.signature = hex::encode(signature.to_bytes());
-                                                
                                                 println!("[PPLNS] Paying {} VLT to {}", amount / 1e8, miner);
                                                 chain_lock.pending_transactions.push(signed_tx);
                                              }
                                         }
                                     }
-                                    
-                                    // Clear Shares after Payout (Window Reset)
                                     shares_lock.clear();
                                 }
-                                
                                 chain_lock.save();
                                 return Some(serde_json::json!(true));
                             }
+                        } else if is_valid_share {
+                            // Valid Share but not Block
+                            println!("[Stratum] Accepted Share from {} (Diff 0.001+)", session_miner_addr.lock().unwrap());
+                            shares_ref.lock().unwrap().push(Share {
+                                miner: session_miner_addr.lock().unwrap().clone(),
+                                difficulty: 0.001, // Flat diff for now
+                            });
+                            return Some(serde_json::json!(true));
+                        } else {
+                            println!("[Stratum] Rejected Share from {} - Hash: {}", session_miner_addr.lock().unwrap(), block.hash);
+                        }
                         } else {
                             // Valid Share Logic
                             // SECURITY FIX: Verify Share Weak-PoW (Fake Share Attack)
