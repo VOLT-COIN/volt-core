@@ -186,8 +186,6 @@ fn handle_request(
 
     match req.command.as_str() {
         // --- SENSITIVE COMMANDS (Protected) ---
-    match req.command.as_str() {
-        // --- SENSITIVE COMMANDS (Protected) ---
         "get_address" | "get_mnemonic" | "generate_mnemonic" | "import_mnemonic" | "send_transaction" | "import_wallet" | "encrypt_wallet" | "unlock_wallet" | "lock_wallet" | "stake" | "unstake" | "place_order" | "cancel_order" | "deploy_contract" | "call_contract" => {
             // 1. Check IP (Localhost is always trusted)
             let is_local = peer_addr.ip().is_loopback(); 
