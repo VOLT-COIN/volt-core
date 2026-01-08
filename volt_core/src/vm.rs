@@ -22,7 +22,7 @@ impl WasmVM {
         let module = Module::new(&store, wasm_code).map_err(|e| e.to_string())?;
 
         let env_data = ContractEnv {
-            storage: Arc::new(Mutex::new(storage)),
+            _storage: Arc::new(Mutex::new(storage)),
         };
         let env = FunctionEnv::new(&mut store, env_data);
 
