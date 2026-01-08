@@ -326,15 +326,15 @@ function Home() {
                 <h2 className="gradient-text" style={{ fontSize: '2.5rem', marginBottom: '10px' }}>START MINING</h2>
                 <p style={{ color: 'var(--text-muted)', marginBottom: '20px' }}>Connect your miners to the official Volt Pool.</p>
 
-                <div style={{ display: 'inline-block', background: 'rgba(0,0,0,0.3)', padding: '15px 30px', borderRadius: '12px', border: '1px solid var(--glass-border)', fontFamily: 'monospace', fontSize: '1.1rem', marginBottom: '40px' }}>
-                    wss://voltcore-node.hf.space
+                <div style={{ background: 'rgba(0,0,0,0.3)', padding: '20px', borderRadius: '12px', display: 'inline-block', fontFamily: 'monospace', fontSize: '1.2rem', color: '#fff', border: '1px solid #333' }}>
+                    stratum+tcp://82.201.143.174:3333
                 </div>
 
-                <div className="pool-grid" style={{ justifyContent: 'center' }}>
-                    <div className="glass-card" style={{ minWidth: '200px' }}>
-                        <h3 className="pool-port" style={{ color: '#38bdf8' }}>443 (WSS)</h3>
-                        <span className="pool-mode">PPLNS</span>
-                        <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '5px' }}>Official PPLNS Pool</p>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '20px', maxWidth: '600px', margin: '40px auto' }}>
+                    <div className="glass-card" style={{ textAlign: 'center' }}>
+                        <h2 className="gradient-text" style={{ fontSize: '3rem', margin: 0 }}>3333 (TCP)</h2>
+                        <p style={{ color: '#888' }}>PPLNS</p>
+                        <p style={{ fontSize: '0.8rem', color: '#555' }}>Official PPLNS Pool</p>
                     </div>
                 </div>
             </section>
