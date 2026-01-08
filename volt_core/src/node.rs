@@ -164,7 +164,7 @@ impl Node {
                                     Message::FindNode(target_id) => {
                                         let neighbors = routing_inner.lock().unwrap().find_closest(&target_id, 20);
                                         let resp = Message::Neighbors(neighbors);
-                                        let _json = serde_json::to_string(&resp).unwrap();
+                                        let json = serde_json::to_string(&resp).unwrap();
                                         // We need to write this to stream.
                                         // Accessing stream here is tricky because we are inside `process_message`.
                                         // `process_message` returns Ok(Some(resp)) to send it back!
@@ -264,7 +264,7 @@ impl Node {
                                                         // Process Message (With Ban Logic)
                                                         match process_message(parsed_msg, chain_inner.clone(), peers_inner.clone(), port) {
                                                             Ok(Some(response)) => {
-                                                                let _json = serde_json::to_string(&response).unwrap_or_default();
+                                                                let json = serde_json::to_string(&response).unwrap_or_default();
                                                                 let _ = socket.send(tungstenite::Message::Text(json));
                                                             },
                                                             Ok(None) => {}, // Continue
@@ -291,7 +291,7 @@ impl Node {
                                 if let Ok(msg) = Message::deserialize(&mut de) {
                                      match process_message(msg, chain_inner.clone(), peers_inner.clone(), port) {
                                          Ok(Some(response)) => {
-                                             let _json = serde_json::to_string(&response).unwrap_or_default();
+                                             let json = serde_json::to_string(&response).unwrap_or_default();
                                              if let Ok(mut stream_clone) = stream.try_clone() {
                                                  let _ = stream_clone.write_all(json.as_bytes());
                                                  let _ = stream_clone.flush();
@@ -412,7 +412,7 @@ impl Node {
                      
                      // Handshake: GetChain
                      let msg = Message::GetChain;
-                     let _json = serde_json::to_string(&msg).unwrap_or_default();
+                     let json = serde_json::to_string(&msg).unwrap_or_default();
                      if let Err(e) = socket.send(tungstenite::Message::Text(json)) {
                          println!("[P2P] Failed to send Handshake: {}", e);
                          return;
@@ -443,7 +443,7 @@ impl Node {
              if let Ok(mut stream) = TcpStream::connect(&peer_addr) {
                   // ... (Existing Logic)
                   let msg = Message::GetChain;
-                  let _json = serde_json::to_string(&msg).unwrap_or_default();
+                  let json = serde_json::to_string(&msg).unwrap_or_default();
                   let _ = stream.write_all(json.as_bytes());
                   
                   let mut de = serde_json::Deserializer::from_reader(&stream);
@@ -468,7 +468,7 @@ impl Node {
                      let msg = Message::Chain(chain.get_all_blocks());
                      drop(chain); // Unlock
 
-                     let _json = serde_json::to_string(&msg).unwrap_or_default();
+                     let json = serde_json::to_string(&msg).unwrap_or_default();
                      
                      if let Err(e) = socket.send(tungstenite::Message::Text(json)) {
                          println!("[Sync] Failed to send data via WSS: {}", e);
@@ -486,7 +486,7 @@ impl Node {
                  let chain = self.blockchain.lock().unwrap();
                  let msg = Message::Chain(chain.get_all_blocks());
                  
-                 let _json = serde_json::to_string(&msg).unwrap_or_default();
+                 let json = serde_json::to_string(&msg).unwrap_or_default();
                  
                  if stream.write_all(json.as_bytes()).is_ok() {
                      println!("[Sync] Chain data sent successfully.");
@@ -546,7 +546,7 @@ impl Node {
                          match tungstenite::connect(&peer) {
                              Ok((mut socket, _)) => {
                                  let msg = Message::GetPeers;
-                                 let _json = serde_json::to_string(&msg).unwrap_or_default();
+                                 let json = serde_json::to_string(&msg).unwrap_or_default();
                                  if socket.send(tungstenite::Message::Text(json)).is_ok() {
                                      if let Ok(msg) = socket.read() {
                                           if let tungstenite::Message::Text(text) = msg {
