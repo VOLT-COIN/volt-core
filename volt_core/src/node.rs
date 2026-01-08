@@ -110,6 +110,11 @@ impl Node {
                             continue; // Drop connection
                         }
 
+                        if peers_ref.lock().unwrap().len() >= 50 {
+                             println!("[P2P] Max peers reached (50). Rejecting connection.");
+                             continue;
+                        }
+
                         thread::spawn(move || {
                             // ---------------------------------------------------------
                             // SERVER SIDE: Dual Mode (WebSocket + Raw TCP)

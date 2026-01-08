@@ -57,7 +57,14 @@ impl P2P {
 
                 loop {
                     tokio::select! {
-                        result = reader.read_line(&mut line) => {
+                        result = tokio::time::timeout(std::time::Duration::from_secs(30), reader.read_line(&mut line)) => {
+                            let result = match result {
+                                Ok(res) => res,
+                                Err(_) => {
+                                    println!("[P2P] Connection timed out (Slowloris protection).");
+                                    break;
+                                }
+                            };
                             match result {
                                 Ok(0) => break, // EOF
                                 Ok(_) => {
@@ -106,6 +113,7 @@ impl P2P {
                                 }
                                 Err(_) => break,
                             }
+                        }
                         }
                         recv_res = rx.recv() => {
                              if let Ok(msg) = recv_res {

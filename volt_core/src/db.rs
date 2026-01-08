@@ -126,7 +126,7 @@ impl Database {
     pub fn get_block(&self, index: u64) -> sled::Result<Option<Block>> {
         let blocks = self.blocks()?;
         if let Some(val) = blocks.get(&index.to_be_bytes())? {
-             let block: Block = serde_json::from_slice(&val).unwrap();
+             let block: Block = serde_json::from_slice(&val).map_err(|e| sled::Error::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, e)))?;
              Ok(Some(block))
         } else {
              Ok(None)
@@ -136,7 +136,7 @@ impl Database {
     pub fn get_last_block(&self) -> sled::Result<Option<Block>> {
         let blocks = self.blocks()?;
         if let Some((_key, val)) = blocks.last()? {
-            let block: Block = serde_json::from_slice(&val).unwrap();
+            let block: Block = serde_json::from_slice(&val).map_err(|e| sled::Error::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, e)))?;
             Ok(Some(block))
         } else {
             Ok(None)
@@ -166,7 +166,7 @@ impl Database {
     pub fn get_transaction(&self, hash_bytes: &[u8]) -> sled::Result<Option<Transaction>> {
         let txs = self.txs()?;
         if let Some(val) = txs.get(hash_bytes)? {
-            let tx: Transaction = serde_json::from_slice(&val).unwrap();
+            let tx: Transaction = serde_json::from_slice(&val).map_err(|e| sled::Error::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, e)))?;
             Ok(Some(tx))
         } else {
             Ok(None)
@@ -181,8 +181,11 @@ impl Database {
             // Propagate error if iteration fails
             let (_, v) = item?;
             // Propagate error if deserialization fails (data corruption)
-            let block: Block = serde_json::from_slice(&v).expect("DB Corruption: Failed to deserialize block");
-            result.push(block);
+            if let Ok(block) = serde_json::from_slice::<Block>(&v) {
+                result.push(block);
+            } else {
+                eprintln!("[DB Warning] Skipping corrupted block data.");
+            }
         }
         Ok(result)
     }
