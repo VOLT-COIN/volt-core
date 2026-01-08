@@ -569,7 +569,8 @@ fn handle_client(
     chain: Arc<Mutex<Blockchain>>, 
     mode_ref: Arc<Mutex<PoolMode>>,
     shares_ref: Arc<Mutex<Vec<Share>>>,
-    wallet_ref: Arc<Mutex<Wallet>> // Added missing arg
+    wallet_ref: Arc<Mutex<Wallet>>,
+    job_source: Arc<Mutex<JobState>>
 ) {
     let peer_addr = stream.peer_addr().unwrap_or(std::net::SocketAddr::from(([0,0,0,0], 0)));
     println!("[Stratum TCP] Client connected: {}", peer_addr);
@@ -581,49 +582,38 @@ fn handle_client(
     let session_miner_addr = Arc::new(Mutex::new("SYSTEM_POOL".to_string()));
     let current_block_template = Arc::new(Mutex::new(None::<crate::block::Block>));
     let is_authorized = Arc::new(Mutex::new(false));
-    let last_notified_height = Arc::new(Mutex::new(0u64));
+    let last_job_id = Arc::new(Mutex::new("".to_string()));
+    let last_notified_height = Arc::new(Mutex::new(0u64)); 
 
     // Notifier Thread
-    let (chain_n, miner_n, block_n, auth_n, height_n, wallet_n) = (chain.clone(), session_miner_addr.clone(), current_block_template.clone(), is_authorized.clone(), last_notified_height.clone(), wallet_ref.clone());
+    let (block_n, auth_n, last_job_n, job_src_n) = (current_block_template.clone(), is_authorized.clone(), last_job_id.clone(), job_source.clone());
     
     thread::spawn(move || {
         loop {
-            thread::sleep(Duration::from_millis(500));
+            thread::sleep(Duration::from_millis(200)); 
             if !*auth_n.lock().unwrap() { continue; }
             
-            // Check Height/Time
-            let (h, next_block) = {
-                let c = chain_n.lock().unwrap();
-                (c.get_height(), c.get_mining_candidate(miner_n.lock().unwrap().clone()))
+            let (new_notify, new_block, new_id) = {
+                 let state = job_src_n.lock().unwrap();
+                 if state.job_id == "INIT" { continue; }
+                 
+                 let my_last = last_job_n.lock().unwrap().clone();
+                 if state.job_id != my_last {
+                     (Some(state.notify_json.clone()), state.block_template.clone(), state.job_id.clone())
+                 } else { (None, None, "".to_string()) }
             };
-            let last_h = *height_n.lock().unwrap();
-            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or(Duration::from_secs(0)).as_secs();
 
-            if h != last_h || now % 30 == 0 {
-                // Generate Notify JSON (Simplified)
-                *block_n.lock().unwrap() = Some(next_block.clone());
-                *height_n.lock().unwrap() = h;
-
-                let job_id = format!("{}_{}", next_block.index, next_block.timestamp);
-                let _notify = serde_json::json!({
-                    "id": null, "method": "mining.notify",
-                    "params": [ job_id, "PREVHASH", "COINB1", "COINB2", [], "00000001", "BITS", "TIME", true ]
-                });
-                // Actual generation is complex (see original), sending simplified placeholder to keep it compiled
-                // You should assume full generation logic is here or extracted. 
-                // For now, let's assume client handles it or this is sufficient for 'ping'.
-                // If you need full logic, copy from previous view. 
-                // CRITICAL: We need REAL data for mining to work.
-                // Re-implementing simplified logic for robustness:
-                let pool_addr_hex = wallet_n.lock().unwrap().get_address();
-                let final_notify = create_mining_notify(&next_block, &job_id, &pool_addr_hex);
-
-                if let Ok(s) = serde_json::to_string(&final_notify) {
+            if let Some(notify) = new_notify {
+                *block_n.lock().unwrap() = new_block;
+                *last_job_n.lock().unwrap() = new_id;
+                
+                if let Ok(s) = serde_json::to_string(&notify) {
                      if stream_writer_notify.write_all((s + "\n").as_bytes()).is_err() { break; }
                 }
             }
         }
-    });
+    }); 
+
 
     let mut reader = BufReader::new(stream_reader);
     let mut line = String::new();
