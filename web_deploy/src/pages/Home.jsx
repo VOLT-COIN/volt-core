@@ -35,11 +35,8 @@ function Home() {
                     // Calc Circulating
                     setCirculating(((data.height || 0) * 50).toLocaleString('en-US', { maximumFractionDigits: 0 }));
 
-                    // Est Hashrate (Diff * 2^32 / 60s)
-                    // Add small jitter to look alive if difficulty is static
-                    const rawH = (data.difficulty * 4294967296) / 60;
-                    const jitter = rawH * (Math.random() * 0.05 - 0.025); // +/- 2.5%
-                    setHashrate(formatHashrate(rawH + jitter));
+                    // Real Pool Hashrate
+                    setHashrate(formatHashrate(data.pool_hashrate || 0));
                 }
 
                 // Fetch Txs
