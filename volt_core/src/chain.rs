@@ -337,16 +337,16 @@ impl ChainState {
                  let is_wasm = contract.bytecode.starts_with(b"\0asm");
 
                  if is_wasm {
-                     let vm_res = crate::vm::WasmVM::new(&contract.bytecode, contract.storage.clone());
-                     match vm_res {
-                         Ok(mut vm) => {
-                             let method = String::from_utf8(tx.data.clone()).unwrap_or("main".to_string());
-                             let _ = vm.call(&method, vec![]);
-                             contract.storage = vm.get_storage();
+                     // SECURITY FIX: Use execute_safe to prevent infinite loops hanging the node
+                     let method = String::from_utf8(tx.data.clone()).unwrap_or("main".to_string());
+                     
+                     match crate::vm::WasmVM::execute_safe(&contract.bytecode, contract.storage.clone(), &method, 200) {
+                         Ok(new_storage) => {
+                              contract.storage = new_storage;
                          },
                          Err(e) => {
-                             println!("WasmVM Error: {}", e);
-                             return false; 
+                              println!("[WasmVM] Contract Error: {}", e);
+                              return false;
                          }
                      }
                  } else {

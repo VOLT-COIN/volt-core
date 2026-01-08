@@ -84,4 +84,39 @@ impl WasmVM {
     pub fn get_storage(&self) -> Storage {
         self.storage_ref.lock().unwrap().clone()
     }
+
+    /// Static helper to execute code with a strict timeout (Crash Prevention)
+    pub fn execute_safe(bytecode: &[u8], storage: Storage, method: &str, limit_ms: u64) -> Result<Storage, String> {
+        let code = bytecode.to_vec();
+        let store_map = storage;
+        let method_name = method.to_string();
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        
+        std::thread::spawn(move || {
+            let res = WasmVM::new(&code, store_map);
+            match res {
+                Ok(mut vm) => {
+                     let call_res = vm.call(&method_name, vec![]);
+                     match call_res {
+                         Ok(_) => {
+                             let final_store = vm.get_storage();
+                             let _ = tx.send(Ok(final_store));
+                         },
+                         Err(e) => {
+                             let _ = tx.send(Err(e));
+                         }
+                     }
+                },
+                Err(e) => {
+                    let _ = tx.send(Err(e));
+                }
+            }
+        });
+
+        match rx.recv_timeout(std::time::Duration::from_millis(limit_ms)) {
+            Ok(result) => result,
+            Err(_) => Err("Execution Timed Out (Infinite Loop Protection)".to_string())
+        }
+    }
 }

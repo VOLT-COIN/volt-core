@@ -155,13 +155,13 @@ impl Wallet {
         }
     }
 
-    pub fn _sign(&self, message: &str) -> String {
+    pub fn _sign(&self, message: &str) -> Result<String, String> {
         if let Some(pk) = &self.private_key {
             use k256::ecdsa::signature::Signer;
             let signature: k256::ecdsa::Signature = pk.sign(message.as_bytes());
-            hex::encode(signature.to_bytes())
+            Ok(hex::encode(signature.to_bytes()))
         } else {
-            String::new() // Fail silently or panic?
+            Err("Wallet is Locked or Private Key Missing".to_string())
         }
     }
 
