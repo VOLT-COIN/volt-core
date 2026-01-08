@@ -120,7 +120,7 @@ impl Node {
                             let process_message = |msg: Message, chain_inner: Arc<Mutex<Blockchain>>, peers_inner: Arc<Mutex<Vec<String>>>, port: u16, routing_table: Arc<Mutex<RoutingTable>>, peer_ip: String| -> Result<Option<Message>, ()> {
                                 match msg {
                                     Message::Handshake { node_id, listen_port } => {
-                                         println!("[P2P] Received Handshake from {} (NodeId: {}, Port: {})", peer_ip, node_id, listen_port);
+                                         println!("[P2P] Received Handshake from {} (NodeId: {:?}, Port: {})", peer_ip, node_id, listen_port);
                                          let peer_addr_str = format!("{}:{}", peer_ip, listen_port);
                                          let peer = crate::kademlia::Peer {
                                              id: node_id,
