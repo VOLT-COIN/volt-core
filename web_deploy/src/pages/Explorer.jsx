@@ -145,24 +145,26 @@ function Explorer() {
                         <h3 style={{ margin: 0 }}>Recent Transactions</h3>
                         <span style={{ fontSize: '0.8rem', color: '#888' }}>Mempool</span>
                     </div>
-                    {txs.map(t => (
-                        <div key={t.hash} onClick={() => navigate('/tx/' + t.hash)} className="hover-row" style={{ padding: '15px 20px', borderBottom: '1px solid rgba(255,255,255,0.05)', cursor: 'pointer' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
-                                <span style={{ color: '#ff0055', fontFamily: 'monospace', fontSize: '0.85rem' }}>{t.hash.substr(0, 16)}...</span>
-                                {t.tx_type === 'DeployContract' || (typeof t.tx_type === 'object' && t.tx_type.DeployContract) ? (
-                                    <span style={{ color: '#ec4899', fontWeight: 'bold' }}>CONTRACT DEPLOY</span>
-                                ) : t.tx_type === 'CallContract' || (typeof t.tx_type === 'object' && t.tx_type.CallContract) ? (
-                                    <span style={{ color: '#d946ef', fontWeight: 'bold' }}>CONTRACT CALL</span>
-                                ) : (
-                                    <span style={{ color: '#fff', fontWeight: 'bold' }}>{(t.amount / 100000000).toLocaleString()} VLT</span>
-                                )}
+                    {txs
+                        .filter(t => t.receiver !== 'LOCKED' && !t.receiver?.includes('LOCKED'))
+                        .map(t => (
+                            <div key={t.hash} onClick={() => navigate('/tx/' + t.hash)} className="hover-row" style={{ padding: '15px 20px', borderBottom: '1px solid rgba(255,255,255,0.05)', cursor: 'pointer' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                                    <span style={{ color: '#ff0055', fontFamily: 'monospace', fontSize: '0.85rem' }}>{t.hash ? t.hash.substr(0, 16) : '???'}...</span>
+                                    {t.tx_type === 'DeployContract' || (typeof t.tx_type === 'object' && t.tx_type.DeployContract) ? (
+                                        <span style={{ color: '#ec4899', fontWeight: 'bold' }}>CONTRACT DEPLOY</span>
+                                    ) : t.tx_type === 'CallContract' || (typeof t.tx_type === 'object' && t.tx_type.CallContract) ? (
+                                        <span style={{ color: '#d946ef', fontWeight: 'bold' }}>CONTRACT CALL</span>
+                                    ) : (
+                                        <span style={{ color: '#fff', fontWeight: 'bold' }}>{(t.amount / 100000000).toLocaleString()} VLT</span>
+                                    )}
+                                </div>
+                                <div style={{ color: '#888', fontSize: '0.75rem', display: 'flex', gap: '10px' }}>
+                                    <span>From: {t.sender ? t.sender.substr(0, 8) : 'System'}...</span>
+                                    <span>To: {t.receiver ? t.receiver.substr(0, 8) : 'Unknown'}...</span>
+                                </div>
                             </div>
-                            <div style={{ color: '#888', fontSize: '0.75rem', display: 'flex', gap: '10px' }}>
-                                <span>From: {t.sender.substr(0, 8)}...</span>
-                                <span>To: {t.receiver.substr(0, 8)}...</span>
-                            </div>
-                        </div>
-                    ))}
+                        ))}
                 </div>
             </div>
         </div>

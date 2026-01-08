@@ -267,7 +267,7 @@ function Home() {
                         <span>Latest Transactions</span>
                     </div>
                     <div>
-                        {txs.length === 0 ? <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>Waiting for txs...</div> : txs.map((t, i) => (
+                        {txs.filter(t => t.receiver !== 'LOCKED' && !t.receiver?.includes('LOCKED')).length === 0 ? <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>Waiting for txs...</div> : txs.filter(t => t.receiver !== 'LOCKED' && !t.receiver?.includes('LOCKED')).map((t, i) => (
                             <div key={i} className="feed-item">
                                 <div style={{ display: 'flex', alignItems: 'center' }}>
                                     <div className="feed-icon" style={{ color: '#f472b6' }}>💸</div>
