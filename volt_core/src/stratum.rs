@@ -57,7 +57,7 @@ fn create_mining_notify(
     // Stratum miners typically expect BE string and reverse it themselves for the header.
     // If we send LE, they reverse to BE -> Mismatch.
     let prev = hex::decode(&next_block.previous_hash).unwrap_or(vec![0;32]);
-    let prev_hex = hex::encode(prev);
+    let _prev_hex = hex::encode(prev); // Unused warning fix
      
     // 2. Coinbase Part 1
     // Height (LE) -> Pushed as hex
@@ -527,31 +527,12 @@ fn process_rpc_request(
                         println!("  = Calculated Hash: {}", block.hash);
 
                         // TARGET CHECKS
-                        // 1. Calculate numerical value of hash
-                        let hash_bi = num_bigint::BigUint::parse_bytes(block.hash.as_bytes(), 16).unwrap_or(num_bigint::BigUint::from(0u32));
-                        
-                        // 2. Calculate Targets
-                        // Max Target (Diff 1) = 0x00000000FFFF... (approx)
-                        // Precise: 2^224 approx.
-                        // Let's use simple approximation for now or re-use `block.difficulty` if possible.
-                        // Block Target (from nbits):
-                        // bits = 0x1d00ffff. Target = 0x00ffff * 2^(8*(0x1d - 3)) = 0xffff * 2^208.
-                        // Share Target (from set_difficulty 0.001):
-                        // Target = BlockTarget * (1/0.001) = BlockTarget * 1000.
-
-                        // Since we don't have BigUint easy available without import?
-                        // `num_bigint` is NOT in Cargo.toml?
-                        // Let's check Cargo.toml first.
-                        // If not, use leading zeros approximation.
-
+                        // We use simple string prefix checks for MVP optimization.
                         // Hash string is 64 chars.
                         // Block Target (Diff 1): 8 Zeros (32 bits). (Approx).
                         // Share Target (Diff 0.001): 8 - log16(1000) ~= 8 - 2.5 = 5.5 Zeros.
                         // Let's effectively accept anything with "00000" (5 zeros) as Share.
                         // And "00000000" (8 zeros) as Block.
-                        
-                        // Better: Use `u64` prefix check?
-                        // 64 chars hex. Top 16 chars = u64.
                         
                         let is_valid_share = block.hash.starts_with("00000"); // Diff ~0.001
                         let is_valid_block = block.hash.starts_with("00000000"); // Diff 1
