@@ -712,10 +712,11 @@ fn handle_client(
                 if let Ok(s) = serde_json::to_string(&resp) {
                     let _ = stream_writer_resp.write_all((s + "\n").as_bytes());
                 }
-                // FIX: Send Explicit Difficulty Notification after Subscribe
-                if req.method == "mining.subscribe" {
+                if req.method == "mining.subscribe" || req.method == "mining.authorize" {
+                    // Send Difficulty 0.1 (Target ~ 0x09ffff...)
+                    // This ensures Miner has a valid target even if it skipped subscribe or didn't parse the first one.
                     let diff_notify = serde_json::json!({
-                        "id": null, "method": "mining.set_difficulty", "params": [1.0]
+                        "id": null, "method": "mining.set_difficulty", "params": [0.1]
                     });
                     if let Ok(s) = serde_json::to_string(&diff_notify) {
                          let _ = stream_writer_resp.write_all((s + "\n").as_bytes());
