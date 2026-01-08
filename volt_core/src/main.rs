@@ -101,6 +101,22 @@ fn main() {
     // 4. Wallet & Mining
     let miner_wallet = Arc::new(Mutex::new(Wallet::new()));
     let mut addr_miner = miner_wallet.lock().unwrap().get_address();
+    
+    // PREVENTION FIX: Auto-Generate Wallet if Missing
+    if addr_miner == "LOCKED" {
+        log("[Setup] First run detected (No Wallet). Generating secure Mining Wallet...", &logs);
+        let (mut w, phrase) = Wallet::create_with_mnemonic();
+        // Save with a default password so it persists. User can change later via API.
+        w.save_encrypted("volt_node_auto"); 
+        
+        log("!!! IMPORTANT: SAVE THIS MNEMONIC !!!", &logs);
+        log(&format!("Mnemonic: {}", phrase), &logs);
+        log("!!! ------------------------------- !!!", &logs);
+        
+        *miner_wallet.lock().unwrap() = w;
+        addr_miner = miner_wallet.lock().unwrap().get_address();
+    }
+
     let external_addr_flag = args.iter().find(|a| a.starts_with("VLT") && a.len() > 20); // Basic check
     let _use_external = external_addr_flag.is_some();
 
