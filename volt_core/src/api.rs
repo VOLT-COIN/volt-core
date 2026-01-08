@@ -5,11 +5,11 @@ use std::thread;
 use serde::{Serialize, Deserialize};
 use serde_json::Value;
 use crate::chain::Blockchain;
-use crate::vm::WasmVM;
+use crate::vm::WasmVM; // Unused
 use crate::wallet::Wallet;
-use crate::transaction::Transaction;
+use crate::transaction::Transaction; // Unused
 use crate::node::Node;
-use crate::vm::Storage;
+
 use crate::stratum::Share;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -317,7 +317,7 @@ fn handle_request(
                 let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
                 let window = 60;
                 let mut total_difficulty = 0.0;
-                for s in shares.iter() {
+                for s in shares_guard.iter() {
                     if now >= s.timestamp && now - s.timestamp <= window {
                         total_difficulty += s.difficulty;
                     }
