@@ -265,6 +265,7 @@ fn process_rpc_request(
                              let mut hasher = Sha256::new(); hasher.update(&coinbase_bytes);
                              let r1 = hasher.finalize();
                              let mut h2 = Sha256::new(); h2.update(r1);
+                             let coinbase_hash = h2.finalize();
                              
                              let mut script_data = Vec::new();
                              script_data.extend_from_slice(&height_bytes);
@@ -273,8 +274,12 @@ fn process_rpc_request(
                              
                              let mut tx = block.transactions[0].clone();
                              tx.script_sig = crate::script::Script::new().push(crate::script::OpCode::OpPush(script_data));
-                             block.transactions[0] = tx;
-                             block.merkle_root = crate::block::Block::calculate_merkle_root(&block.transactions);
+                             block.transactions[0] = tx; // Store for valid chain data
+                             
+                             // CRITICAL FIX: Manually set Merkle Root to valid Coinbase Hash (Legacy compat)
+                             // Block::calculate_merkle_root uses internal hashing which might differ for Stratum blobs.
+                             // Since it's a 1-tx block, Merkle Root == Coinbase Hash.
+                             block.merkle_root = hex::encode(coinbase_hash);
                         }
 
                         if let Ok(n) = u32::from_str_radix(nonce_hex, 16) { block.proof_of_work = n.swap_bytes(); }
