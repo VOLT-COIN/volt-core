@@ -63,7 +63,7 @@ const AddressBook = ({ onSelect }) => {
                         <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                             <div onClick={() => onSelect(c.address)} style={{ cursor: 'pointer', flex: 1 }}>
                                 <div style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>{c.name}</div>
-                                <div style={{ fontSize: '0.75rem', fontFamily: 'monospace', color: '#666' }}>{c.address.substr(0, 10)}...</div>
+                                <div style={{ fontSize: '0.75rem', fontFamily: 'monospace', color: '#666' }}>{(c.address || "").substr(0, 10)}...</div>
                             </div>
                             <button onClick={() => deleteContact(i)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}>×</button>
                         </div>

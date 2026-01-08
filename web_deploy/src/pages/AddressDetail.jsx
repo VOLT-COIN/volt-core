@@ -82,7 +82,7 @@ function AddressDetail() {
                     data.history.map((tx, i) => (
                         <div key={i} className="hover-row" style={{ padding: '20px', borderBottom: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
-                                <div style={{ fontFamily: 'monospace', color: '#fff', fontSize: '0.9rem' }}>{tx.hash.substr(0, 32)}...</div>
+                                <div style={{ fontFamily: 'monospace', color: '#fff', fontSize: '0.9rem' }}>{(tx.hash || "").substr(0, 32)}...</div>
                                 <div style={{ fontSize: '0.75rem', color: '#888' }}>
                                     {tx.time} • Block #{tx.block} •
                                     <span style={{ color: tx.status === 'Confirmed' ? '#4ade80' : '#fbbf24', marginLeft: '5px' }}>{tx.status}</span>
