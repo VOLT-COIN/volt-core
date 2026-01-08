@@ -93,7 +93,10 @@ fn main() {
         addr_miner = miner_wallet.lock().unwrap().get_address();
     }
 
-    let external_addr_flag = args.iter().find(|a| a.starts_with("VLT") && a.len() > 20); // Basic check
+    // Check for External Address (VLT prefix OR Hex string)
+    let external_addr_flag = args.iter().find(|a| 
+        !a.starts_with("--") && a.len() > 20 && !a.contains("nodisplay") 
+    );
     let _use_external = external_addr_flag.is_some();
 
     if let Some(ext) = external_addr_flag {
