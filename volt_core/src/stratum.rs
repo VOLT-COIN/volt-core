@@ -107,9 +107,8 @@ fn create_mining_notify(
     // We send BE so the miner reverses it to LE (correct for Bitcoin Header).
     let version_hex = hex::encode(1u32.to_be_bytes());
 
-    // Time (LE)
-    // We fixed parser in Submit to handle LE. So sending LE here is consistent with internal logic.
-    let ntime_hex = hex::encode((next_block.timestamp as u32).to_le_bytes());
+    // Time (BE) - Standard Stratum sends Time as BE Hex.
+    let ntime_hex = hex::encode((next_block.timestamp as u32).to_be_bytes());
 
     serde_json::json!({
         "id": null, "method": "mining.notify",
