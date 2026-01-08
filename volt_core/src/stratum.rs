@@ -15,7 +15,7 @@ struct RpcRequest {
 }
 
 use ripemd::{Ripemd160, Digest}; // Added for P2PKH
-use sha2::Digest; // Added for P2PKH
+
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct RpcResponse {
