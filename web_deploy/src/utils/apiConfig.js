@@ -1,5 +1,5 @@
 export const getApiConfig = () => {
-    let url = localStorage.getItem('volt_node_url') || 'https://voltcore-node.hf.space';
+    let url = localStorage.getItem('volt_node_url') || 'http://82.201.143.174';
     // Normalize URL: Ensure http:// or https://
     if (url && !url.startsWith('http')) {
         url = 'http://' + url;
