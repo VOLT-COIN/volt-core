@@ -599,9 +599,7 @@ impl Blockchain {
         
         // Debug Log
         println!("[Genesis] Local Genesis Hash: {}", genesis_block.hash);
-        // Debug Log
-        println!("[Genesis] New Local Genesis Hash: {}", genesis_block.hash);
-        println!("[Genesis] Please update remote checkpoints with this new hash.");
+        println!("[Genesis] Please update remote checkpoints with this new hash if changed.");
 
 
 

@@ -178,9 +178,12 @@ impl Node {
                                         Ok(None)
                                     },
                                     Message::GetChain => {
-                                        println!("[P2P] Received Chain Request (Full). Ignored in DB Mode (Use GetBlocks).");
-                                        // Return empty to signal no-op or just handle sync elsewhere
-                                        Ok(None)
+                                        // println!("[P2P] Received Chain Request (Full). providing first 500 blocks.");
+                                        let chain = chain_inner.lock().unwrap();
+                                        let blocks = chain.get_all_blocks(); // Legacy fallback: get all if possible, or truncate
+                                        let limit = 500;
+                                        let chunk = if blocks.len() > limit { blocks[0..limit].to_vec() } else { blocks };
+                                        Ok(Some(Message::Chain(chunk)))
                                     },
                                     Message::GetBlocks { start, limit } => {
                                         let chain = chain_inner.lock().unwrap();
@@ -410,8 +413,9 @@ impl Node {
                  Ok((mut socket, _)) => {
                      println!("[P2P] Connected via WebSocket to {}", peer_addr);
                      
-                     // Handshake: GetChain
-                     let msg = Message::GetChain;
+                     // Handshake: GetBlocks (Chunked Sync)
+                     let my_height = self.blockchain.lock().unwrap().get_height() as usize;
+                     let msg = Message::GetBlocks { start: my_height, limit: 500 };
                      let json = serde_json::to_string(&msg).unwrap_or_default();
                      if let Err(e) = socket.send(tungstenite::Message::Text(json)) {
                          println!("[P2P] Failed to send Handshake: {}", e);
@@ -442,7 +446,8 @@ impl Node {
              // ... Raw TCP Logic ...
              if let Ok(mut stream) = TcpStream::connect(&peer_addr) {
                   // ... (Existing Logic)
-                  let msg = Message::GetChain;
+                   let my_height = self.blockchain.lock().unwrap().get_height() as usize;
+                  let msg = Message::GetBlocks { start: my_height, limit: 500 };
                   let json = serde_json::to_string(&msg).unwrap_or_default();
                   let _ = stream.write_all(json.as_bytes());
                   
@@ -465,7 +470,10 @@ impl Node {
              match tungstenite::connect(&peer_addr) {
                  Ok((mut socket, _)) => {
                      let chain = self.blockchain.lock().unwrap();
-                     let msg = Message::Chain(chain.get_all_blocks());
+                     let all_blocks = chain.get_all_blocks();
+                     let limit = 500;
+                     let blocks = if all_blocks.len() > limit { all_blocks[0..limit].to_vec() } else { all_blocks };
+                     let msg = Message::Chain(blocks);
                      drop(chain); // Unlock
 
                      let json = serde_json::to_string(&msg).unwrap_or_default();
@@ -484,7 +492,10 @@ impl Node {
             // Raw TCP
             if let Ok(mut stream) = TcpStream::connect(&peer_addr) {
                  let chain = self.blockchain.lock().unwrap();
-                 let msg = Message::Chain(chain.get_all_blocks());
+                 let all_blocks = chain.get_all_blocks();
+                 let limit = 500;
+                 let blocks = if all_blocks.len() > limit { all_blocks[0..limit].to_vec() } else { all_blocks };
+                 let msg = Message::Chain(blocks);
                  
                  let json = serde_json::to_string(&msg).unwrap_or_default();
                  
