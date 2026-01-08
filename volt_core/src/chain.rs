@@ -1257,7 +1257,7 @@ impl Blockchain {
          let bonus_capped = bonus.min(5); 
          
          // Fix: Handle Bits vs Legacy Diff
-         let mut required_diff = 4; // Default
+         let mut required_diff; // Declare without initialization
          
          if block.difficulty >= 0x1d00ffff {
              // It's Bits.
