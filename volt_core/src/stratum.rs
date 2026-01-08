@@ -94,34 +94,9 @@ fn create_mining_notify(
        if hashes.len() > 1 { branch.push(hex::encode(&hashes[1])); }
     }
 
-    // FIX: Bitcoin Compact Target Format (nBits)
-    // Map internal "difficulty" (leading zeros) to Compact Target.
-    // Example: Diff 20 -> Target with 20 leading zeros.
-    // Target = 2^(256 - diff).
-    // This is approximate but standard compliant.
-    fn to_compact(zeros: u32) -> u32 {
-        let shift = 256 - zeros;
-        let bytes = (shift + 7) / 8;
-        let exponent = bytes;
-        let mantissa_shift = 8 * (exponent - 3); // Top 3 bytes
-        let target_u256_approx = if shift < 64 { 1u64 << shift } else { u64::MAX }; // Simplify for u64 math
-        // Better: Construct mantissa directly.
-        // Bit 'shift' is set. 
-        // We want top 3 bytes starting from 'bytes'.
-        // Exponent 'E'. Value = 0.Man * 256^(E-3).
-        // Let's use standard Diff 1 (32 zeros) = 0x1d00ffff.
-        // Diff 20 (20 zeros) = EASIER. 
-        // 0x1f0fffff (Approx).
-        // Let's rely on a lookup or simple mapping for now to ensure flow works.
-        // If diff=1 -> 0x207fffff (1 zero).
-        // If diff=20 -> 0x1e0fffff.
-        if zeros == 0 { return 0x207fffff; }
-        let e = (256 - zeros + 7) / 8;
-        let m = 0x00_7f_ff_ff; // generic mantissa
-        (e << 24) | m
-    }
-
-    let nbits = to_compact(next_block.difficulty);
+    // FIX: Difficulty is already stored as Compact Target in Block struct (e.g. 0x1d00ffff)
+    // We just need to send it as Little Endian Hex.
+    let nbits = next_block.difficulty; 
     let bits_hex = hex::encode(nbits.to_le_bytes()); // LE Encoded Compact Bits
 
     // Version (LE)
