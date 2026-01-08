@@ -531,7 +531,7 @@ fn handle_client(
                 // FIX: Send Explicit Difficulty Notification after Subscribe
                 if req.method == "mining.subscribe" {
                     let diff_notify = serde_json::json!({
-                        "id": null, "method": "mining.set_difficulty", "params": [0.001]
+                        "id": null, "method": "mining.set_difficulty", "params": [1.0]
                     });
                     if let Ok(s) = serde_json::to_string(&diff_notify) {
                          let _ = stream_writer_resp.write_all((s + "\n").as_bytes());
@@ -644,7 +644,7 @@ fn handle_client_ws(
                             // FIX: Send Explicit Difficulty Notification after Subscribe
                             if req.method == "mining.subscribe" {
                                 let diff_notify = serde_json::json!({
-                                    "id": null, "method": "mining.set_difficulty", "params": [0.001]
+                                    "id": null, "method": "mining.set_difficulty", "params": [1.0]
                                 });
                                 if let Ok(s) = serde_json::to_string(&diff_notify) {
                                      let _ = socket.send(Message::Text(s));
