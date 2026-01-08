@@ -124,27 +124,53 @@ impl Block {
     }
 
     pub fn mine(&mut self, difficulty: usize, max_iterations: u64) -> bool {
-        // Hybrid Consensus: Apply Bonus Locally
+        // Hybrid Consensus: Validated Stake Bonus
+        // Bonus = (Stake / 10B) -> Max 5 bits reduction
+        // For security, cap bonus effectively.
         let bonus = (self.validator_stake / 10_000_000_000) as u32; 
         let bonus_capped = bonus.min(5);
-        let effective_diff = (difficulty as u32).saturating_sub(bonus_capped);
-        let mut required_diff = if effective_diff < 1 { 1 } else { effective_diff };
         
-        // FIX: Handle Bits format (large number)
-        if required_diff > 64 { required_diff = 4; } 
-        
-        // println!("Mining with Stake Bonus: -{} Diff (Effective: {})", bonus_capped, required_diff);
+        // Target Calculation (Simplified for MVP: Leading Zeros + Value)
+        // Difficulty represents "Bits" in Bitcoin format (e.g., 0x1d00ffff)
+        // Here we use a simpler model: Difficulty = Number of required leading zero bits.
+        let base_diff = difficulty as u32;
+        let effective_diff = base_diff.saturating_sub(bonus_capped);
+        let required_zeros = if effective_diff < 1 { 1 } else { effective_diff };
 
-        let target = "0".repeat(required_diff as usize);
         let mut iterations = 0;
-
-        while !self.hash.starts_with(&target) {
-            self.proof_of_work += 1;
+        
+        // Pre-calculate target bytes for comparison
+        // e.g. if required_zeros = 20, we need hash < 2^(256-20)
+        // We simulate this by checking leading zero bits.
+        
+        loop {
             self.hash = self.calculate_hash();
+            
+            // Numeric check
+            if Block::check_pow(&self.hash, required_zeros) {
+                println!("Block mined: {}", self.hash);
+                return true;
+            }
+
+            self.proof_of_work = self.proof_of_work.wrapping_add(1);
             iterations += 1;
             if iterations > max_iterations { return false; }
         }
-        println!("Block mined: {}", self.hash);
-        true
+    }
+
+    pub fn check_pow(hash_hex: &str, distinct_bits: u32) -> bool {
+        if let Ok(bytes) = hex::decode(hash_hex) {
+            let mut zeros = 0;
+            for &byte in &bytes {
+                if byte == 0 {
+                    zeros += 8;
+                } else {
+                    zeros += byte.leading_zeros();
+                    break;
+                }
+            }
+            return zeros >= distinct_bits;
+        }
+        false
     }
 }

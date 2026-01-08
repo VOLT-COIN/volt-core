@@ -94,8 +94,10 @@ impl ApiServer {
         let shares = self.shares.clone();
 
         thread::spawn(move || {
-            let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).expect("Failed to bind API port");
-            println!("[API] Server listening on 0.0.0.0:{} (Public Read-Only, Private Local-Admin)", port);
+            // SECURITY FIX: Bind to 127.0.0.1 (Localhost Only)
+            // Use Nginx Reverse Proxy for external access (with SSL/Auth) if needed.
+            let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).expect("Failed to bind API port");
+            println!("[API] Server listening on 127.0.0.1:{} (Secured Loopback)", port);
 
             for stream in listener.incoming() {
                 match stream {

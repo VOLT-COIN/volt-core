@@ -516,6 +516,21 @@ impl Blockchain {
         let mut state = ChainState::new(None);
 
         for block in chain {
+            // SECURITY FIX: Verify Validator Stake Claim
+            // The block header claims a 'validator_stake'. We must verify this matches the DB state.
+            // The miner corresponds to the receiver of the Coinbase tx (Tx 0).
+            if !block.transactions.is_empty() {
+                let miner_address = &block.transactions[0].receiver;
+                let actual_stake = state.get_stake(miner_address);
+                if block.validator_stake != actual_stake {
+                     // For Genesis block (0), stake might be 0 or irrelevant, so existing logic passes.
+                     // But for mined blocks, this is CRITICAL.
+                     if block.index > 0 {
+                         return Err(format!("Invalid Validator Stake Claim in Block #{}. Claimed: {}, Actual: {}", block.index, block.validator_stake, actual_stake));
+                     }
+                }
+            }
+
             // 1. Process Improved Maturity (Unlock old rewards)
             let current_height = block.index;
             let mut matured = Vec::new();
@@ -535,6 +550,11 @@ impl Blockchain {
 
             // 2. Process Transactions
             for (tx_idx, tx) in block.transactions.iter().enumerate() {
+                 // SECURITY FIX: Mandatory Signature Verification
+                 if !tx.verify() {
+                     return Err(format!("Invalid Transaction Signature at Block #{} Tx #{}", block.index, tx_idx));
+                 }
+
                  if tx.sender == "SYSTEM" {
                      // Check if Genesis Block (Index 0) -> No Maturity (Premine/Instant Unlock)
                      let maturity_depth = if block.index == 0 { 0 } else { 10 };
