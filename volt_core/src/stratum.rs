@@ -502,9 +502,20 @@ fn process_rpc_request(
                              if let Ok(t) = u32::from_str_radix(ntime_hex, 16) { block.timestamp = t as u64; }
                         }
                         
+                        // DEBUG: Print Header Details
+                        println!("[Stratum Debug] Header Construction:");
+                        println!("  - Version: {:08x} (LE Bytes: {:?})", block.version, block.version.to_le_bytes());
+                        println!("  - PrevHash: {}", block.previous_hash);
+                        println!("  - Merkle: {}", block.merkle_root);
+                        println!("  - Time: {} (Hex: {}) -> Bytes: {:?}", block.timestamp, ntime_hex, block.timestamp.to_le_bytes());
+                        println!("  - Bits: {:08x} (LE: {:?})", block.difficulty, block.difficulty.to_le_bytes());
+                        println!("  - Nonce: {:08x} (Hex: {})", block.proof_of_work, nonce_hex);
+                        
                         block.hash = block.calculate_hash();
+                        println!("  = Calculated Hash: {}", block.hash);
 
-                        if block.hash.starts_with("0000") {
+                        if block.hash.starts_with("00") { // More lenient for debug? No, Miner solves diff 1/0.1
+
                             println!("[Pool] BLOCK FOUND! Hash: {}", block.hash);
                             // Submit
                             let mut chain_lock = chain.lock().unwrap();
