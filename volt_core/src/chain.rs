@@ -333,24 +333,37 @@ impl ChainState {
         } else if tx.tx_type == TxType::CallContract {
              if let Some(mut contract) = self.contracts.remove(&tx.receiver) { // Take ownership to mutate
                  // Instantiate VM
-                 let vm_res = WasmVM::new(&contract.bytecode, contract.storage.clone());
-                 match vm_res {
-                     Ok(mut vm) => {
-                         // Parse Method and Args from tx.data
-                         // Format: "method_name" (args in VM memory? For MVP just run main/start)
-                         // Actually data is Vec<u8>, maybe valid string method name?
-                         // Let's assume data IS the method name for now.
-                         let method = String::from_utf8(tx.data.clone()).unwrap_or("main".to_string());
-                         
-                         // Call
-                         let _ = vm.call(&method, vec![]);
-                         
-                          // Update Storage (Generic Sync)
-                          contract.storage = vm.get_storage();
-                     },
-                     Err(e) => {
-                         println!("VM Error: {}", e);
-                         return false; // Fail Tx
+                 // Determine VM Type
+                 let is_wasm = contract.bytecode.starts_with(b"\0asm");
+
+                 if is_wasm {
+                     let vm_res = crate::vm::WasmVM::new(&contract.bytecode, contract.storage.clone());
+                     match vm_res {
+                         Ok(mut vm) => {
+                             let method = String::from_utf8(tx.data.clone()).unwrap_or("main".to_string());
+                             let _ = vm.call(&method, vec![]);
+                             contract.storage = vm.get_storage();
+                         },
+                         Err(e) => {
+                             println!("WasmVM Error: {}", e);
+                             return false; 
+                         }
+                     }
+                 } else {
+                     // EVM Support (Solidity)
+                     let mut evm = crate::evm_runner::EvmRunner::new();
+                     // Note: Ideally we load existing storage here.
+                     // For this iteration, we execute in a fresh context.
+                     let res = evm.execute(tx.sender.clone(), Some(tx.receiver.clone()), tx.data.clone(), 0);
+                     match res {
+                         Ok((_, output, gas)) => {
+                             println!("[EVM] Execution Success. Gas: {}, Output: {} bytes", gas, output.len());
+                             // Future: Apply state changes back to contract.storage
+                         },
+                         Err(e) => {
+                             println!("[EVM] Execution Error: {}", e);
+                             return false;
+                         }
                      }
                  }
                  self.contracts.insert(tx.receiver.clone(), contract); // Put back

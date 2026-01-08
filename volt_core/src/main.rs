@@ -9,6 +9,7 @@ mod db;
 mod script;
 mod vm; // Smart Contracts
 mod kademlia; // Phase 7: P2P DHT
+mod evm_runner; // EVM Compatibility
 // mod gui; // Phase 37: GUI Module (Disabled)
 
 use chain::Blockchain;

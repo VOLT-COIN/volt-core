@@ -32,6 +32,11 @@ igd = "0.12"
 tungstenite = { version = "0.20", features = ["rustls-tls-native-roots"] }
 url = "2.4" 
 
+# EVM Support
+revm = { version = "3.1", features = ["std", "secp256k1"] }
+bytes = "1.4"
+hex-literal = "0.4"
+primitive-types = "0.12"
 # GUI (Disabled)
 # eframe = "0.27.0"
 # egui = "0.27.0"
