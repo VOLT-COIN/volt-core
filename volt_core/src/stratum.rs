@@ -53,12 +53,10 @@ fn create_mining_notify(
     pool_addr_hex: &str
 ) -> serde_json::Value {
     // ... existed ...
-    // 1. Previous Hash (Try Little Endian)
-    // Some miners expect LE hash to put directly into header.
-    // If we send BE, and they don't reverse, they hash wrong header.
-    // Let's try sending LE.
-    let mut prev = hex::decode(&next_block.previous_hash).unwrap_or(vec![0;32]);
-    prev.reverse(); // Convert to LE
+    // 1. Previous Hash (Send as-is / Big Endian from DB)
+    // Stratum miners typically expect BE string and reverse it themselves for the header.
+    // If we send LE, they reverse to BE -> Mismatch.
+    let prev = hex::decode(&next_block.previous_hash).unwrap_or(vec![0;32]);
     let _prev_hex = hex::encode(prev); // Unused warning fix
      
     // 2. Coinbase Part 1
