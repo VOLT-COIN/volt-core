@@ -920,38 +920,38 @@ impl eframe::App for WalletApp {
 
                                 ui.add_space(15.0);
 
-                                // Fee Selection
-                                ui.label(egui::RichText::new("Network Fee:").size(16.0));
+                                // Fee Selection (Bitcoin-like)
+                                ui.label(egui::RichText::new("Network Fee Rate (sat/vB):").size(16.0));
                                 ui.horizontal(|ui| {
-                                    ui.radio_value(&mut self.send_fee_tier, FeeTier::Eco, "Eco (Slow)");
-                                    ui.radio_value(&mut self.send_fee_tier, FeeTier::Standard, "Standard");
-                                    ui.radio_value(&mut self.send_fee_tier, FeeTier::Fast, "Fast");
+                                    ui.radio_value(&mut self.send_fee_tier, FeeTier::Eco, "Eco (10 s/vb)");
+                                    ui.radio_value(&mut self.send_fee_tier, FeeTier::Standard, "Standard (25 s/vb)");
+                                    ui.radio_value(&mut self.send_fee_tier, FeeTier::Fast, "Fast (100 s/vb)");
                                     ui.radio_value(&mut self.send_fee_tier, FeeTier::Custom, "Custom");
                                 });
 
                                 // Fee Logic Display
-                                let display_fee = match self.send_fee_tier {
-                                    FeeTier::Eco => 1000,
-                                    FeeTier::Standard => 5000,
-                                    FeeTier::Fast => 20000,
+                                let virtual_size = 250; // Estimated vBytes for standard tx
+                                let fee_rate = match self.send_fee_tier {
+                                    FeeTier::Eco => 10,
+                                    FeeTier::Standard => 25,
+                                    FeeTier::Fast => 100,
                                     FeeTier::Custom => {
-                                        self.send_fee_input.parse::<u64>().unwrap_or(0)
+                                        self.send_fee_input.parse::<u64>().unwrap_or(25)
                                     }
                                 };
+                                let total_fee_sats = fee_rate * virtual_size;
                                 
                                 if self.send_fee_tier == FeeTier::Custom {
                                      ui.add_space(5.0);
-                                     ui.add(egui::TextEdit::singleline(&mut self.send_fee_input).hint_text("Enter Fee (Sats)"));
+                                     ui.add(egui::TextEdit::singleline(&mut self.send_fee_input).hint_text("Enter Rate (sat/vB)"));
                                 } else {
-                                     // Clear custom input if not selected to avoid confusion? Or keep it?
-                                     // Let's show the calc
                                      let time_est = match self.send_fee_tier {
                                          FeeTier::Eco => "~30 mins",
                                          FeeTier::Standard => "~10 mins",
                                          FeeTier::Fast => "~2 mins",
                                          _ => "?"
                                      };
-                                     ui.label(egui::RichText::new(format!("Cost: {:.8} VLT | Est. Time: {}", display_fee as f64 / 100_000_000.0, time_est)).color(COL_SUBTEXT));
+                                     ui.label(egui::RichText::new(format!("Total Fee: {} sats ({:.8} VLT) | Est. Time: {}", total_fee_sats, total_fee_sats as f64 / 100_000_000.0, time_est)).color(COL_SUBTEXT));
                                 }
 
                                 ui.add_space(30.0);
@@ -965,12 +965,13 @@ impl eframe::App for WalletApp {
                                                  let atomic_amount = (amt * 100_000_000.0) as u64; 
 
                                                  // Final calculated fee
-                                                 let final_fee = match self.send_fee_tier {
-                                                     FeeTier::Eco => 1000, 
-                                                     FeeTier::Standard => 5000,
-                                                     FeeTier::Fast => 20000,
-                                                     FeeTier::Custom => self.send_fee_input.parse::<u64>().unwrap_or(1000).max(1000) // Enforce Min even in custom
+                                                 let final_rate = match self.send_fee_tier {
+                                                     FeeTier::Eco => 10, 
+                                                     FeeTier::Standard => 25,
+                                                     FeeTier::Fast => 100,
+                                                     FeeTier::Custom => self.send_fee_input.parse::<u64>().unwrap_or(25).max(1) 
                                                  };
+                                                 let final_fee = final_rate * virtual_size;
 
                                                  // Send atomic amount
                                                  self.tx.send(BgMessage::SendTransaction{ recipient: self.send_recipient.clone(), amount: atomic_amount as f64, fee: final_fee, token: self.send_token.clone() }).unwrap();

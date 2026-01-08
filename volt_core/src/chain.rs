@@ -1137,7 +1137,14 @@ impl Blockchain {
         let _height = self.get_height();
         let mut reward = self.calculate_reward(_height);
         
+        // Clone pending pool
         let mut txs = self.pending_transactions.clone();
+
+        // ---------------------------------------------------------
+        // BITCOIN-LIKE FEE MARKET
+        // Prioritize transactions with higher fees (Fee Density)
+        // ---------------------------------------------------------
+        txs.sort_by(|a, b| b.fee.cmp(&a.fee));
 
         // Limit transactions to prevent oversized blocks (Reserve 200 slots for System/Stake txs)
         let max_txs = 1800;

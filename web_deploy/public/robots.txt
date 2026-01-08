@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://volt-core.vercel.app/sitemap.xml
