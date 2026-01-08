@@ -33,7 +33,7 @@ tungstenite = { version = "0.20", features = ["native-tls"] }
 url = "2.4" 
 
 # EVM Support
-revm = { version = "2.5", features = ["std", "secp256k1"] }
+revm = { version = "3.1", default-features = false, features = ["std", "serde"] }
 bytes = "1.4"
 hex-literal = "0.4"
 primitive-types = "0.12"
