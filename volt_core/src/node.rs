@@ -8,7 +8,7 @@ use std::time::Duration;
 use crate::block::Block;
 use crate::transaction::Transaction;
 use crate::chain::Blockchain;
-use crate::kademlia::{NodeId, RoutingTable, Peer}; // Import Kademlia
+use crate::kademlia::{NodeId, RoutingTable}; // Import Kademlia
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Message {
@@ -631,7 +631,7 @@ impl Node {
         }
     }
 
-    pub fn resolve_dns_seeds(&self) {
+    pub fn _resolve_dns_seeds(&self) {
         let seeds = vec![
             "seed1.volt-coin.org", // Placeholder
             "seed2.volt-project.net",

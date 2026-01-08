@@ -137,7 +137,7 @@ impl Wallet {
         false
     }
 
-    pub fn create(password: &str) -> Self {
+    pub fn _create(password: &str) -> Self {
         let (mut w, _) = Wallet::create_with_mnemonic();
         // private_key is Some by default from create_with_mnemonic helper refactor?
         // Wait, I need to check create_with_mnemonic implementation below.
@@ -155,7 +155,7 @@ impl Wallet {
         }
     }
 
-    pub fn sign(&self, message: &str) -> String {
+    pub fn _sign(&self, message: &str) -> String {
         if let Some(pk) = &self.private_key {
             use k256::ecdsa::signature::Signer;
             let signature: k256::ecdsa::Signature = pk.sign(message.as_bytes());

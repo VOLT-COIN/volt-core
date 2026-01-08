@@ -1,4 +1,4 @@
-use wasmer::{Store, Module, Instance, Value, Imports, Function, FunctionEnv, FunctionEnvMut, imports};
+use wasmer::{Store, Module, Instance, Value, Function, FunctionEnv, imports};
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 
@@ -7,13 +7,13 @@ pub type Storage = HashMap<String, Vec<u8>>;
 
 #[derive(Clone)]
 pub struct ContractEnv {
-    pub storage: Arc<Mutex<Storage>>,
+    pub _storage: Arc<Mutex<Storage>>,
 }
 
 pub struct WasmVM {
     store: Store,
     instance: Instance,
-    env: FunctionEnv<ContractEnv>,
+    _env: FunctionEnv<ContractEnv>,
 }
 
 impl WasmVM {
@@ -44,7 +44,7 @@ impl WasmVM {
         Ok(Self {
             store,
             instance,
-            env,
+            _env: env,
         })
     }
 
@@ -54,7 +54,7 @@ impl WasmVM {
     }
 
     // Retrieve storage after execution
-    pub fn get_storage(&self, store: &mut Store) -> Storage {
+    pub fn _get_storage(&self, _store: &mut Store) -> Storage {
         // In a real implementation, we would access the Env
         // But FunctionEnv access requires the store reference that owns it
         // MVP: Just returning empty or need to implement host function correctly to mutate Env

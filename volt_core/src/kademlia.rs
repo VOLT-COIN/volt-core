@@ -1,5 +1,5 @@
 use std::collections::LinkedList;
-use std::time::{SystemTime, UNIX_EPOCH};
+// use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 
 const K_BUCKET_SIZE: usize = 20;
@@ -9,7 +9,7 @@ const ID_SIZE: usize = 32; // SHA256 space
 pub struct NodeId(pub [u8; 32]);
 
 impl NodeId {
-    pub fn new(data: [u8; 32]) -> Self {
+    pub fn _new(data: [u8; 32]) -> Self {
         NodeId(data)
     }
 
@@ -62,7 +62,7 @@ impl Bucket {
 
     pub fn add(&mut self, peer: Peer) -> Option<Peer> {
         // Check if exists
-        if let Some(pos) = self.peers.iter().position(|p| p.id == peer.id) {
+        if let Some(_pos) = self.peers.iter().position(|p| p.id == peer.id) {
             // Move to tail (most recently seen)
             // LinkedList remove is O(n), Vec might be better but K is small.
             // Simplified: Update last_seen if found, don't move for now to keep simple API.

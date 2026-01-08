@@ -183,7 +183,7 @@ impl Transaction {
         }
     }
 
-    pub fn new_order(sender: String, token: String, side: &str, amount: u64, price: u64, nonce: u64) -> Self {
+    pub fn new_order(sender: String, token: String, side: &str, amount: u64, _price: u64, nonce: u64) -> Self {
          let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -303,7 +303,7 @@ impl Transaction {
         }
     }
 
-    pub fn new_call(sender: String, contract: String, method: &str, args: Vec<u8>, nonce: u64) -> Self {
+    pub fn new_call(sender: String, contract: String, _method: &str, args: Vec<u8>, nonce: u64) -> Self {
          let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
          // define arg payload? For now just raw bytes
          Transaction {

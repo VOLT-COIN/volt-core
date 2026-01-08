@@ -197,11 +197,18 @@ fn main() {
     }
 }
     
-    /* GUI DISABLED - LINKER ISSUES
-    if headless {
-       // ... existing headless code ...
-    } else {
-       // ... existing gui code ...
-    }
-    */
+
+/* GUI DISABLED - LINKER ISSUES
+if headless {
+   // ... existing headless code ...
+} else {
+   // ... existing gui code ...
 }
+*/
+}
+
+// Fix for: "undefined symbol: __rust_probestack" on Linux targets using Wasmer + Cranelift
+#[cfg(all(target_os = "linux", any(target_arch = "x86_64", target_arch = "x86")))]
+#[no_mangle]
+pub extern "C" fn __rust_probestack() {}
+
