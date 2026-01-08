@@ -321,15 +321,24 @@ fn process_rpc_request(
                                     // No, we are about to add them.
                                     
                                     for (miner, amount) in payouts {
-                                        if amount > 1000.0 { // Min payout threshold
+                                        let amount_u64 = amount as u64;
+                                        
+                                        // Dynamic Fee: Base 1000 + 0.1% of Amount
+                                        let base_fee = 100_000;
+                                        let percentage_fee = (amount_u64 as f64 * 0.001) as u64;
+                                        let tx_fee = base_fee + percentage_fee;
+
+                                        if amount_u64 > tx_fee + 1000 { // Min payout threshold covers fee
                                              current_nonce += 1;
-                                             let tx = crate::transaction::Transaction::new(
+                                             let net_amount = amount_u64 - tx_fee; // Deduct Fee
+
+                                             let mut tx = crate::transaction::Transaction::new(
                                                  pool_addr.clone(),
                                                  miner.clone(),
-                                                 amount as u64,
+                                                 net_amount,
                                                  "VLT".to_string(),
                                                  current_nonce,
-                                                 0
+                                                 tx_fee
                                              );
                                              
                                              // Sign with Server Wallet
