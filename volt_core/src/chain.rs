@@ -331,7 +331,7 @@ impl ChainState {
             };
             self.contracts.insert(contract_addr, contract);
         } else if tx.tx_type == TxType::CallContract {
-             if let Some(contract) = self.contracts.remove(&tx.receiver) { // Take ownership to mutate
+             if let Some(mut contract) = self.contracts.remove(&tx.receiver) { // Take ownership to mutate
                  // Instantiate VM
                  let vm_res = WasmVM::new(&contract.bytecode, contract.storage.clone());
                  match vm_res {

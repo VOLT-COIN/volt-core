@@ -259,6 +259,48 @@ impl Transaction {
         }
     }
 
+    pub fn new_deploy_contract(sender: String, bytecode: Vec<u8>, nonce: u64) -> Self {
+        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+
+        Transaction {
+            version: 1,
+            sender: sender.clone(),
+            receiver: "CONTRACT_DEPLOY".to_string(),
+            amount: 0,
+            signature: String::new(),
+            timestamp,
+            token: "VLT".to_string(),
+            tx_type: TxType::DeployContract,
+            nonce,
+            fee: 1_000_000,
+            script_pub_key: Script::new(),
+            script_sig: Script::new(),
+            price: 0,
+            data: bytecode,
+        }
+    }
+
+    pub fn new_call_contract(sender: String, contract: String, data: Vec<u8>, nonce: u64) -> Self {
+        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+
+        Transaction {
+            version: 1,
+            sender,
+            receiver: contract,
+            amount: 0, 
+            signature: String::new(),
+            timestamp,
+            token: "VLT".to_string(),
+            tx_type: TxType::CallContract,
+            nonce,
+            fee: 500_000,
+            script_pub_key: Script::new(),
+            script_sig: Script::new(),
+            price: 0,
+            data,
+        }
+    }
+
     pub fn new_unstake(sender: String, amount: u64, nonce: u64) -> Self {
          let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
