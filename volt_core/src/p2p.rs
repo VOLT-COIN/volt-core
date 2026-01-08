@@ -3,43 +3,40 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::broadcast;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
+use std::sync::{Arc, Mutex};
 use crate::block::Block;
 use crate::transaction::Transaction;
-use crate::kademlia::NodeId; // Import
-use crate::kademlia::Peer;
+use crate::kademlia::{NodeId, Peer, RoutingTable};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Message {
-    Handshake { port: u16 },
+    Handshake { port: u16, id: Option<NodeId> }, // Added ID for DHT
     NewBlock(Block),
     NewTransaction(Transaction),
     // DHT
     FindNode(NodeId),
     Neighbors(Vec<Peer>),
 }
-}
 
 pub struct P2P {
-    peers: Vec<SocketAddr>,
     tx_channel: broadcast::Sender<Message>,
+    routing_table: Arc<Mutex<RoutingTable>>,
 }
 
 impl P2P {
-    pub fn new(tx_channel: broadcast::Sender<Message>) -> Self {
+    pub fn new(tx_channel: broadcast::Sender<Message>, local_id: NodeId) -> Self {
         P2P {
-            peers: Vec::new(),
             tx_channel,
+            routing_table: Arc::new(Mutex::new(RoutingTable::new(local_id))),
         }
     }
 
-    pub async fn start_server(port: u16, tx: broadcast::Sender<Message>) {
+    pub async fn start_server(port: u16, tx: broadcast::Sender<Message>, routing_table: Arc<Mutex<RoutingTable>>) {
         let addr = format!("0.0.0.0:{}", port);
-        // Bind failure is fatal at startup, expect is fine here.
         let listener = TcpListener::bind(&addr).await.expect("Failed to bind port");
-        println!("P2P Server listening on {}", addr);
+        println!("[P2P] Server listening on {} (DHT Enabled)", addr);
 
         loop {
-            // FIX: Handle accept error without crashing
             let (mut socket, addr) = match listener.accept().await {
                 Ok(s) => s,
                 Err(e) => {
@@ -48,9 +45,10 @@ impl P2P {
                 }
             };
             
-            println!("New connection from: {}", addr);
+            println!("[P2P] New connection from: {}", addr);
             let tx = tx.clone();
             let mut rx = tx.subscribe();
+            let rt = routing_table.clone();
 
             tokio::spawn(async move {
                 let (reader, mut writer) = socket.split();
@@ -60,45 +58,68 @@ impl P2P {
                 loop {
                     tokio::select! {
                         result = reader.read_line(&mut line) => {
-                            // FIX: Handle read error gracefully
                             match result {
                                 Ok(0) => break, // EOF
                                 Ok(_) => {
-                                    // println!("Received from {}: {}", addr, line.trim());
-                                    // Parse Message (Optional phase)
                                     if let Ok(msg) = serde_json::from_str::<Message>(&line) {
-                                        println!("Valid P2P Message from {}: {:?}", addr, msg);
-                                    } else {
-                                        println!("Raw/Invalid from {}: {}", addr, line.trim());
+                                        // Process Message
+                                        match msg.clone() {
+                                            Message::Handshake { port, id } => {
+                                                if let Some(node_id) = id {
+                                                    let mut peer_addr = addr.ip().to_string();
+                                                    if peer_addr == "127.0.0.1" { peer_addr = addr.ip().to_string(); } // Keep local if local
+                                                    let full_addr = format!("{}:{}", peer_addr, port);
+                                                    
+                                                    let peer = Peer {
+                                                        id: node_id,
+                                                        address: full_addr, 
+                                                        last_seen: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()
+                                                    };
+                                                    
+                                                    rt.lock().unwrap().add_peer(peer);
+                                                    // println!("[DHT] Added peer: {:?}", node_id);
+                                                }
+                                            },
+                                            Message::FindNode(target_id) => {
+                                                // Return K-Closest
+                                                let neighbors = rt.lock().unwrap().find_closest(&target_id, 8);
+                                                let response = Message::Neighbors(neighbors);
+                                                if let Ok(json) = serde_json::to_string(&response) {
+                                                    let _ = writer.write_all((json + "\n").as_str().as_bytes()).await;
+                                                }
+                                            },
+                                            Message::Neighbors(peers) => {
+                                                 // Add discovered peers to our table
+                                                 let mut table = rt.lock().unwrap();
+                                                 for p in peers {
+                                                     table.add_peer(p);
+                                                 }
+                                                 println!("[DHT] Sync: {} peers known", table.buckets.iter().map(|b| b.peers.len()).sum::<usize>());
+                                            },
+                                            _ => {
+                                                // Forward Block/Tx to Internal Channel (Main Node logic handles logic)
+                                                // For now just log
+                                            }
+                                        }
                                     }
                                     line.clear();
                                 }
-                                Err(e) => {
-                                    println!("Read error from {}: {}", addr, e);
-                                    break;
-                                }
+                                Err(_) => break,
                             }
                         }
                         recv_res = rx.recv() => {
-                             match recv_res {
-                                Ok(msg) => {
-                                    // Broadcast message to this client
-                                    // FIX: Handle serialization/write error
-                                    if let Ok(json) = serde_json::to_string(&msg) {
-                                        if writer.write_all(json.as_bytes()).await.is_err() || 
-                                           writer.write_all(b"\n").await.is_err() {
-                                            break; // Client disconnected
-                                        }
-                                    }
-                                }
-                                Err(_) => {
-                                    // Lagged or Closed, ignore for now to keep connection alive if possible
-                                }
+                             if let Ok(msg) = recv_res {
+                                 // Don't echo back exact messages if possible, but for broadcast it's fine
+                                 if let Ok(json) = serde_json::to_string(&msg) {
+                                     if writer.write_all(json.as_bytes()).await.is_err() || 
+                                        writer.write_all(b"\n").await.is_err() {
+                                         break; 
+                                     }
+                                 }
                              }
                         }
                     }
                 }
-                println!("Connection closed: {}", addr);
             });
         }
     }

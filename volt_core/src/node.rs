@@ -116,8 +116,18 @@ impl Node {
                             
                             // Define the message handler logic (Shared by both paths)
                             // Return type changed to Result<Option<Message>, ()> to signal "Ban/Disconnect"
-                            let process_message = |msg: Message, chain_inner: Arc<Mutex<Blockchain>>, peers_inner: Arc<Mutex<Vec<String>>>, port: u16| -> Result<Option<Message>, ()> {
+                            let process_message = |msg: Message, chain_inner: Arc<Mutex<Blockchain>>, peers_inner: Arc<Mutex<Vec<String>>>, port: u16, routing_table: Arc<Mutex<RoutingTable>>, peer_ip: String| -> Result<Option<Message>, ()> {
                                 match msg {
+                                    Message::Handshake { node_id, listen_port } => {
+                                         println!("[P2P] Received Handshake from {} (NodeId: {}, Port: {})", peer_ip, node_id, listen_port);
+                                         let peer_addr_str = format!("{}:{}", peer_ip, listen_port);
+                                         let peer = crate::kademlia::Peer {
+                                             id: node_id,
+                                             address: peer_addr_str,
+                                         };
+                                         routing_table.lock().unwrap().add_peer(peer);
+                                         Ok(None)
+                                    },
                                     Message::NewBlock(block) => {
                                         println!("[P2P] Received Block #{}", block.index);
                                         let mut chain = chain_inner.lock().unwrap();
@@ -168,7 +178,7 @@ impl Node {
                                         Ok(None)
                                     },
                                     Message::FindNode(target_id) => {
-                                        let neighbors = routing_inner.lock().unwrap().find_closest(&target_id, 20);
+                                        let neighbors = routing_table.lock().unwrap().find_closest(&target_id, 20);
                                         let resp = Message::Neighbors(neighbors);
                                         let json = serde_json::to_string(&resp).unwrap();
                                         // We need to write this to stream.
@@ -179,7 +189,7 @@ impl Node {
                                     },
                                     Message::Neighbors(peers) => {
                                         for p in peers {
-                                            routing_inner.lock().unwrap().add_peer(p);
+                                            routing_table.lock().unwrap().add_peer(p);
                                         }
                                         Ok(None)
                                     },
@@ -293,7 +303,7 @@ impl Node {
                                                     let text = msg.to_text().unwrap_or("{}");
                                                     if let Ok(parsed_msg) = serde_json::from_str::<Message>(text) {
                                                         // Process Message (With Ban Logic)
-                                                        match process_message(parsed_msg, chain_inner.clone(), peers_inner.clone(), port) {
+                                                        match process_message(parsed_msg, chain_inner.clone(), peers_inner.clone(), port_ref, routing_inner.clone(), peer_ip.clone()) {
                                                             Ok(Some(response)) => {
                                                                 let json = serde_json::to_string(&response).unwrap_or_default();
                                                                 let _ = socket.send(tungstenite::Message::Text(json));
@@ -320,7 +330,7 @@ impl Node {
                                 // Raw TCP Path (Legacy)
                                 let mut de = serde_json::Deserializer::from_reader(&stream);
                                 if let Ok(msg) = Message::deserialize(&mut de) {
-                                     match process_message(msg, chain_inner.clone(), peers_inner.clone(), port) {
+                                     match process_message(msg, chain_inner.clone(), peers_inner.clone(), port_ref, routing_inner.clone(), peer_ip.clone()) {
                                          Ok(Some(response)) => {
                                              let json = serde_json::to_string(&response).unwrap_or_default();
                                              if let Ok(mut stream_clone) = stream.try_clone() {
@@ -573,6 +583,9 @@ impl Node {
             }
         }
         
+        let self_node_id = self.routing_table.lock().unwrap().local_id.clone();
+        let my_port = self.port;
+
         thread::spawn(move || {
             // Immediate First Run
             loop {
@@ -582,9 +595,17 @@ impl Node {
                 let known_peers = peers_ref.lock().unwrap().clone();
                 
                 for peer in known_peers {
+                    // Send Handshake / ID Announce
+                    let handshake_msg = Message::Handshake { node_id: self_node_id.clone(), listen_port: my_port };
+                    let handshake_json = serde_json::to_string(&handshake_msg).unwrap_or_default();
+
                     if peer.starts_with("ws://") || peer.starts_with("wss://") {
                          match tungstenite::connect(&peer) {
                              Ok((mut socket, _)) => {
+                                 // Send Handshake
+                                 let _ = socket.send(tungstenite::Message::Text(handshake_json));
+                                 
+                                 // Then request peers
                                  let msg = Message::GetPeers;
                                  let json = serde_json::to_string(&msg).unwrap_or_default();
                                  if socket.send(tungstenite::Message::Text(json)).is_ok() {
@@ -609,6 +630,9 @@ impl Node {
                          }
                     } else {
                          if let Ok(mut stream) = TcpStream::connect(&peer) {
+                             // Send Handshake
+                             let _ = stream.write_all(handshake_json.as_bytes());
+                             // Then request peers
                              let msg = Message::GetPeers;
                              let _ = stream.write_all(serde_json::to_string(&msg).unwrap_or_default().as_bytes());
                              
