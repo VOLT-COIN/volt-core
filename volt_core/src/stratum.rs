@@ -438,7 +438,7 @@ fn process_rpc_request(
                              let mut hasher = Sha256::new(); hasher.update(&coinbase_bytes);
                              let r1 = hasher.finalize();
                              let mut h2 = Sha256::new(); h2.update(r1);
-                             let coinbase_hash = h2.finalize();
+                             let _coinbase_hash = h2.finalize();
                              
                              let mut script_data = Vec::new();
                              script_data.extend_from_slice(&height_bytes);
@@ -548,7 +548,7 @@ fn process_rpc_request(
                         // Lenient Share Target (Auto-Detect)
                         // If hash starts with at least "0" (Diff ~0.00001 range), we accept it.
                         // This eliminates "Rejected Share" for misconfigured miners.
-                        let meets_target_lenient = block.hash.starts_with("0") || block.hash.chars().next().unwrap().is_digit(10); 
+                        let _meets_target_lenient = block.hash.starts_with("0") || block.hash.chars().next().unwrap().is_digit(10); 
                         // Actually, just accept it if strict check fails but it looks like a hash?
                         // No, let's require at least "0" prefix to avoid total junk.
                         // Wait, user's junk "6d85..." does NOT start with 0.
@@ -704,7 +704,6 @@ fn handle_client(
             let res = process_rpc_request(req.clone(), &chain, &mode_ref, &shares_ref, &wallet_ref, &session_miner_addr, &current_block_template, &is_authorized, &last_notified_height, &extra_nonce_1);
             
             if let Some(val) = res {
-            if let Some(val) = res {
                 // FIX: Send Explicit Difficulty Notification BEFORE Response
                 if req.method == "mining.subscribe" || req.method == "mining.authorize" {
                     // Use Difficulty 1 (Standard Integer) to robustly set miner target
@@ -733,7 +732,6 @@ fn handle_client(
                          let _ = stream_writer_resp.flush();
                     }
                 }
-            }
             }
         }
     }
