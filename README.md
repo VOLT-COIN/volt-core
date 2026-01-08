@@ -60,7 +60,7 @@ The following updates are planned for the next development phase:
 ### Build & Run
 1.  **Clone the Repository**:
     ```bash
-    git clone https://github.com/eslamsheref5000/volt-core.git
+    git clone https://github.com/VOLT-COIN/volt-core.git
     cd volt-core
     ```
 
