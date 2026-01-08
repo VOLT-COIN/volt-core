@@ -199,7 +199,7 @@ if headless {
    // ... existing gui code ...
 }
 */
-}
+
 
 // Fix for: "undefined symbol: __rust_probestack" on Linux targets using Wasmer + Cranelift
 #[cfg(all(target_os = "linux", any(target_arch = "x86_64", target_arch = "x86")))]
