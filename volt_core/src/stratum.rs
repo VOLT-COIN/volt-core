@@ -454,10 +454,10 @@ fn process_rpc_request(
                              
                              // Update Merkle Root
                              if block.transactions.len() == 1 {
-                                 // Single Tx: Root = Coinbase Hash (Reversed for LE)
-                                 let mut root_le = coinbase_hash_manual.to_vec();
-                                 root_le.reverse();
-                                 block.merkle_root = hex::encode(root_le);
+                                 // Single Tx: Root = Coinbase Hash (BE - Do NOT Reverse for internal calculation)
+                                 let root_be = coinbase_hash_manual.to_vec();
+                                 // root_be.reverse(); // FIX: Do not reverse. Internal Block struct uses BE.
+                                 block.merkle_root = hex::encode(root_be);
                              } else {
                                  // Multi-Tx: Determine if we trust manual hash or struct hash
                                  // Ideally we should trust manual hash for the FIRST element.
@@ -483,9 +483,9 @@ fn process_rpc_request(
                                      hashes = new_hashes;
                                  }
                                  let root_be = hashes[0].clone();
-                                 let mut root_le = root_be;
-                                 root_le.reverse();
-                                 block.merkle_root = hex::encode(root_le);
+                                 // let mut root_le = root_be;
+                                 // root_le.reverse(); // FIX: Do not reverse. Internal Block struct uses BE.
+                                 block.merkle_root = hex::encode(root_be);
                              }
                         }
 
