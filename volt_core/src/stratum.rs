@@ -586,6 +586,13 @@ fn handle_client(
     let is_authorized = Arc::new(Mutex::new(false));
     let last_job_id = Arc::new(Mutex::new("".to_string()));
     let last_notified_height = Arc::new(Mutex::new(0u64)); 
+    
+    // Generate Unique ExtraNonce1 (Random 4 bytes hex)
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+    let random_u32: u32 = rng.gen();
+    let extra_nonce_1_val = format!("{:08x}", random_u32);
+    let extra_nonce_1 = Arc::new(Mutex::new(extra_nonce_1_val)); // Session State 
 
     // Notifier Thread
     let (block_n, auth_n, last_job_n, job_src_n) = (current_block_template.clone(), is_authorized.clone(), last_job_id.clone(), job_source.clone());
