@@ -345,10 +345,8 @@ impl ChainState {
                          // Call
                          let _ = vm.call(&method, vec![]);
                          
-                         // Update Storage (Generic Sync)
-                         // In real impl, we'd iterate modified keys.
-                         // For MVP sandbox, we might need vm to return new storage
-                         // contract.storage = vm.get_storage();
+                          // Update Storage (Generic Sync)
+                          contract.storage = vm.get_storage();
                      },
                      Err(e) => {
                          println!("VM Error: {}", e);

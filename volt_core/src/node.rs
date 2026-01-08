@@ -526,6 +526,7 @@ impl Node {
 
     pub fn start_discovery(&self) {
         let peers_ref = self.peers.clone();
+        let routing_ref = self.routing_table.clone(); // Added for DHT
         
         // Bootstrap Node Injection (ALWAYS ADD)
         {
@@ -597,6 +598,41 @@ impl Node {
                     }
                 }
                 
+                // 2. Kademlia DHT Lookup (Iterative Discovery)
+                // Search for random target to populate buckets, or search for self to find neighbors
+                let target_id = crate::kademlia::NodeId::random();
+                let msg_dht = Message::FindNode(target_id);
+                let json_dht = serde_json::to_string(&msg_dht).unwrap_or_default();
+                
+                // Ask a random subset of peers
+                let peers_snap = peers_ref.lock().unwrap().clone();
+                for peer in peers_snap.iter().take(5) { // Limit to 5 per cycle to avoid storm
+                    if peer.starts_with("ws://") || peer.starts_with("wss://") {
+                         // WSS DHT (Simplified - mostly client side for now)
+                    } else {
+                         if let Ok(mut stream) = TcpStream::connect(&peer) {
+                             let _ = stream.write_all(json_dht.as_bytes());
+                             // Response handled by main server loop? 
+                             // No, we need to read it here if we want to digest it immediately.
+                             // But Kademlia usually is async. 
+                             // For this implementation, we rely on the peer sending back Neighbors message
+                             // which the Server Thread processes! 
+                             // Wait, Server Thread processes INCOMING. 
+                             // We are CLIENT here.
+                             
+                             // FIX: We need to read response here to Populate Routing Table
+                             let mut de = serde_json::Deserializer::from_reader(&stream);
+                             if let Ok(Message::Neighbors(nodes)) = Message::deserialize(&mut de) {
+                                  println!("[DHT] Received {} neighbors from {}", nodes.len(), peer);
+                                  let mut rt = routing_ref.lock().unwrap(); // Use captured ref
+                                  for node in nodes {
+                                      rt.add_peer(node);
+                                  }
+                             }
+                         }
+                    }
+                }
+
                 // Sleep AFTER the first run
                 thread::sleep(Duration::from_secs(60));
             }

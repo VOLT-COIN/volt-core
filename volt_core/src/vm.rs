@@ -10,10 +10,10 @@ pub struct ContractEnv {
     pub _storage: Arc<Mutex<Storage>>,
 }
 
-pub struct WasmVM {
     store: Store,
     instance: Instance,
     _env: FunctionEnv<ContractEnv>,
+    storage_ref: Arc<Mutex<Storage>>,
 }
 
 impl WasmVM {
@@ -21,8 +21,9 @@ impl WasmVM {
         let mut store = Store::default();
         let module = Module::new(&store, wasm_code).map_err(|e| e.to_string())?;
 
+        let storage_arc = Arc::new(Mutex::new(storage));
         let env_data = ContractEnv {
-            _storage: Arc::new(Mutex::new(storage)),
+            _storage: storage_arc.clone(),
         };
         let env = FunctionEnv::new(&mut store, env_data);
 
@@ -45,6 +46,7 @@ impl WasmVM {
             store,
             instance,
             _env: env,
+            storage_ref: storage_arc,
         })
     }
 
@@ -54,10 +56,7 @@ impl WasmVM {
     }
 
     // Retrieve storage after execution
-    pub fn _get_storage(&self, _store: &mut Store) -> Storage {
-        // In a real implementation, we would access the Env
-        // But FunctionEnv access requires the store reference that owns it
-        // MVP: Just returning empty or need to implement host function correctly to mutate Env
-        HashMap::new() // Placeholder
+    pub fn get_storage(&self) -> Storage {
+        self.storage_ref.lock().unwrap().clone()
     }
 }
