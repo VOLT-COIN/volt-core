@@ -43,6 +43,65 @@ pub struct Share {
 }
 
 const _POOL_FEE: f64 = 0.0; 
+const MAX_CONNECTIONS: usize = 1000;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+// Helper: Generate mining.notify fields
+fn create_mining_notify(
+    next_block: &crate::block::Block,
+    job_id: &str,
+    pool_addr_hex: &str
+) -> serde_json::Value {
+    // ... existed ...
+    // 1. Previous Hash (Reversed for Endianness)
+    let prev = hex::decode(&next_block.previous_hash).unwrap_or(vec![0;32]);
+    let mut p_rev = prev; p_rev.reverse();
+    let prev_hex = hex::encode(p_rev);
+     
+    // 2. Coinbase Part 1
+    // Height (LE) -> Pushed as hex
+    let h_bytes = (next_block.index as u32).to_le_bytes();
+    let h_push = format!("0c{}", hex::encode(h_bytes)); // PUSH 12 bytes
+    let cb1 = format!("010000000100000000000000000000000000000000000000000000000000000000ffffffff0d{}", h_push);
+    
+    // 3. Coinbase Part 2 (Payout Script)
+    // Server Wallet P2PKH
+    let pub_key_bytes = hex::decode(pool_addr_hex).unwrap_or(vec![0;33]);
+    
+    use sha2::{Sha256, Digest};
+    use ripemd::Ripemd160;
+    
+    let mut sha = Sha256::new();
+    sha.update(&pub_key_bytes);
+    let sha_hash = sha.finalize();
+    
+    let mut rip = Ripemd160::new();
+    rip.update(&sha_hash);
+    let pub_key_hash = rip.finalize();
+    let pub_key_hash_hex = hex::encode(pub_key_hash);
+
+    let reward = next_block.transactions[0].amount;
+    let amt_hex = hex::encode(reward.to_le_bytes()); // 8 bytes LE
+    
+    let cb2 = format!("ffffffff01{}1976a914{}88ac00000000", amt_hex, pub_key_hash_hex);
+
+    // 4. Branch (Merkle Path)
+    let mut branch = Vec::new();
+    let mut hashes: Vec<Vec<u8>> = next_block.transactions.iter().map(|tx| tx.get_hash()).collect();
+    if hashes.len() > 1 {
+       if hashes.len() % 2 != 0 { hashes.push(hashes.last().unwrap().clone()); }
+       // Simple Single-Branch for 1 TX (Coinbase) + n Txs
+       if hashes.len() > 1 { branch.push(hex::encode(&hashes[1])); }
+    }
+
+    let bits = format!("{:08x}", next_block.difficulty);
+    let ntime = format!("{:08x}", next_block.timestamp);
+
+    serde_json::json!({
+        "id": null, "method": "mining.notify",
+        "params": [ job_id, prev_hex, cb1, cb2, branch, "00000001", bits, ntime, true ]
+    })
+} 
 
 pub struct StratumServer {
     blockchain: Arc<Mutex<Blockchain>>,
@@ -50,6 +109,7 @@ pub struct StratumServer {
     pool_mode: Arc<Mutex<PoolMode>>,
     shares: Arc<Mutex<Vec<Share>>>,
     server_wallet: Arc<Mutex<Wallet>>,
+    active_connections: Arc<AtomicUsize>, // Added DoS protection
 }
 
 impl StratumServer {
@@ -60,6 +120,7 @@ impl StratumServer {
             pool_mode: Arc::new(Mutex::new(mode)),
             shares,
             server_wallet,
+            active_connections: Arc::new(AtomicUsize::new(0)),
         }
     }
 
@@ -69,6 +130,7 @@ impl StratumServer {
         let mode_ref = self.pool_mode.clone();
         let shares_ref = self.shares.clone();
         let wallet_ref = self.server_wallet.clone();
+        let active_conns = self.active_connections.clone();
         
         thread::spawn(move || {
             let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).expect("Failed to bind Stratum port");
@@ -77,14 +139,24 @@ impl StratumServer {
             for stream in listener.incoming() {
                 match stream {
                     Ok(stream) => {
+                        let current_conns = active_conns.load(Ordering::Relaxed);
+                        if current_conns >= MAX_CONNECTIONS {
+                            println!("[Stratum] Max Connections Reached ({}/{}). Dropping...", current_conns, MAX_CONNECTIONS);
+                            continue; // Drop connection
+                        }
+                        
+                        active_conns.fetch_add(1, Ordering::Relaxed);
+                        
                         let chain = chain_ref.clone();
                         let mode = mode_ref.clone();
                         let shares = shares_ref.clone();
                         let wallet = wallet_ref.clone();
+                        let active_conns_inner = active_conns.clone();
 
                         thread::spawn(move || {
                             // Protocol Detection
                             let mut buffer = [0; 4];
+                            // Peek can fail if socket closed immediately
                             let is_websocket = if stream.peek(&mut buffer).is_ok() {
                                 buffer.starts_with(b"GET ")
                             } else { false };
@@ -99,6 +171,9 @@ impl StratumServer {
                             } else {
                                 handle_client(stream, chain, mode, shares, wallet);
                             }
+                            
+                            // Connection Closed - Decrement
+                            active_conns_inner.fetch_sub(1, Ordering::Relaxed);
                         });
                     }
                     Err(e) => println!("Connection failed: {}", e),
@@ -463,50 +538,8 @@ fn handle_client(
                 // If you need full logic, copy from previous view. 
                 // CRITICAL: We need REAL data for mining to work.
                 // Re-implementing simplified logic for robustness:
-                let prev = hex::decode(&next_block.previous_hash).unwrap_or(vec![0;32]);
-                let mut p_rev = prev; p_rev.reverse();
-                let prev_hex = hex::encode(p_rev);
-                 
-                let reward = next_block.transactions[0].amount;
-                let amt_hex = hex::encode(reward.to_le_bytes());
-                let h_bytes = (next_block.index as u32).to_le_bytes();
-                let h_push = format!("0c{}", hex::encode(h_bytes));
-                // Dynamic P2PKH Script Generation (Use Server Wallet for Pool)
                 let pool_addr_hex = wallet_n.lock().unwrap().get_address();
-                let pub_key_bytes = hex::decode(&pool_addr_hex).unwrap_or(vec![0;33]); // Default to 0 if invalid
-                
-                // HASH160(PubKey) = RIPEMD160(SHA256(PubKey))
-                use sha2::Digest;
-                use ripemd::Ripemd160;
-                
-                let mut sha = sha2::Sha256::new();
-                sha.update(&pub_key_bytes);
-                let sha_hash = sha.finalize();
-                
-                let mut rip = Ripemd160::new();
-                rip.update(&sha_hash);
-                let pub_key_hash = rip.finalize();
-                let pub_key_hash_hex = hex::encode(pub_key_hash);
-
-                let cb1 = format!("010000000100000000000000000000000000000000000000000000000000000000ffffffff0d{}", h_push);
-                // Script: OP_DUP (76) OP_HASH160 (a9) OP_PUSH20 (14) <HASH> OP_EQUALVERIFY (88) OP_CHECKSIG (ac)
-                // P2PKH Length = 25 bytes (1 + 1 + 1 + 20 + 1 + 1) -> 0x19 (25)
-                let cb2 = format!("ffffffff01{}1976a914{}88ac00000000", amt_hex, pub_key_hash_hex);
-                let bits = format!("{:08x}", next_block.difficulty);
-                let ntime = format!("{:08x}", next_block.timestamp);
-                
-                // Branch
-                let mut branch = Vec::new();
-                let mut hashes: Vec<Vec<u8>> = next_block.transactions.iter().map(|tx| tx.get_hash()).collect();
-                if hashes.len() > 1 {
-                   if hashes.len() % 2 != 0 { hashes.push(hashes.last().unwrap().clone()); }
-                   if hashes.len() > 1 { branch.push(hex::encode(&hashes[1])); } // Simplified branch for 1 tx + coinbase
-                }
-
-                let final_notify = serde_json::json!({
-                    "id": null, "method": "mining.notify",
-                    "params": [ job_id, prev_hex, cb1, cb2, branch, "00000001", bits, ntime, true ]
-                });
+                let final_notify = create_mining_notify(&next_block, &job_id, &pool_addr_hex);
 
                 if let Ok(s) = serde_json::to_string(&final_notify) {
                      if stream_writer_notify.write_all((s + "\n").as_bytes()).is_err() { break; }
@@ -581,46 +614,8 @@ fn handle_client_ws(
                 // Gen and Send Logic (Duplicated from TCP for now, ideally extract)
                 let job_id = format!("{}_{}", next_block.index, next_block.timestamp);
                 
-                let prev = hex::decode(&next_block.previous_hash).unwrap_or(vec![0;32]);
-                let mut p_rev = prev; p_rev.reverse();
-                let prev_hex = hex::encode(p_rev);
-                 
-                let reward = next_block.transactions[0].amount;
-                let amt_hex = hex::encode(reward.to_le_bytes());
-                let _h_bytes = (next_block.index as u32).to_le_bytes();
-                let h_bytes = (next_block.index as u32).to_le_bytes();
-                // Fix: Use 0c (PUSH 12)
-                let h_push = format!("0c{}", hex::encode(h_bytes));
-                let cb1 = format!("010000000100000000000000000000000000000000000000000000000000000000ffffffff0d{}", h_push);
-                
-                // Dynamic P2PKH for WS (Server Wallet)
                 let pool_addr_hex = wallet_ref.lock().unwrap().get_address();
-                let pub_key_bytes = hex::decode(&pool_addr_hex).unwrap_or(vec![0;33]);
-                
-                let mut sha = sha2::Sha256::new();
-                sha.update(&pub_key_bytes);
-                let sha_hash = sha.finalize();
-                
-                let mut rip = Ripemd160::new();
-                rip.update(&sha_hash);
-                let pub_key_hash = rip.finalize();
-                let pub_key_hash_hex = hex::encode(pub_key_hash);
-
-                let cb2 = format!("ffffffff01{}1976a914{}88ac00000000", amt_hex, pub_key_hash_hex);
-                let bits = format!("{:08x}", next_block.difficulty);
-                let ntime = format!("{:08x}", next_block.timestamp);
-                
-                let mut branch = Vec::new();
-                let mut hashes: Vec<Vec<u8>> = next_block.transactions.iter().map(|tx| tx.get_hash()).collect();
-                if hashes.len() > 1 {
-                   if hashes.len() % 2 != 0 { hashes.push(hashes.last().unwrap().clone()); }
-                   if hashes.len() > 1 { branch.push(hex::encode(&hashes[1])); }
-                }
-
-                let notify = serde_json::json!({
-                    "id": null, "method": "mining.notify",
-                    "params": [ job_id, prev_hex, cb1, cb2, branch, "00000001", bits, ntime, true ]
-                });
+                let notify = create_mining_notify(&next_block, &job_id, &pool_addr_hex);
 
                 if let Ok(s) = serde_json::to_string(&notify) {
                      let _ = socket.send(Message::Text(s));
