@@ -709,12 +709,10 @@ fn handle_client(
             
             if let Some(val) = res {
                 // FIX: Send Explicit Difficulty Notification BEFORE Response
-                // This prevents the miner from starting to mine with Zero Difficulty (race condition)
-                // before it sees the difficulty setting.
                 if req.method == "mining.subscribe" || req.method == "mining.authorize" {
-                    // Use Difficulty 1 (Standard) to ensure broad compatibility
+                    // Use Float 0.001 (Easier than 1) and send as Float to satisfy potential type checks
                     let diff_notify = serde_json::json!({
-                        "id": null, "method": "mining.set_difficulty", "params": [1] // Integer 1
+                        "id": null, "method": "mining.set_difficulty", "params": [0.001]
                     });
                     if let Ok(s) = serde_json::to_string(&diff_notify) {
                          let _ = stream_writer_resp.write_all((s + "\n").as_bytes());
@@ -726,6 +724,17 @@ fn handle_client(
                 if let Ok(s) = serde_json::to_string(&resp) {
                     let _ = stream_writer_resp.write_all((s + "\n").as_bytes());
                     let _ = stream_writer_resp.flush();
+                }
+
+                // Double check: Send AGAIN after response just in case miner ignored the first one
+                if req.method == "mining.subscribe" || req.method == "mining.authorize" {
+                     let diff_notify = serde_json::json!({
+                        "id": null, "method": "mining.set_difficulty", "params": [0.001]
+                    });
+                    if let Ok(s) = serde_json::to_string(&diff_notify) {
+                         let _ = stream_writer_resp.write_all((s + "\n").as_bytes());
+                         let _ = stream_writer_resp.flush();
+                    }
                 }
             }
         }
