@@ -302,10 +302,11 @@ fn process_rpc_request(
                                 {
                                     let mut s_lock = shares_ref.lock().unwrap();
                                     if s_lock.len() > 5000 { s_lock.remove(0); }
+                                    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or(Duration::from_secs(0)).as_secs();
                                     s_lock.push(Share {
                                         miner: session_miner_addr.lock().unwrap().clone(),
                                         difficulty: 0.1,
-                                        timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+                                        timestamp: now,
                                     });
                                 }
                                 return Some(serde_json::json!(true));
@@ -358,8 +359,6 @@ fn handle_client(
                 (c.get_height(), c.get_mining_candidate(miner_n.lock().unwrap().clone()))
             };
             let last_h = *height_n.lock().unwrap();
-            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-
             if h != last_h || now % 30 == 0 {
                 // Generate Notify JSON (Simplified)
                 *block_n.lock().unwrap() = Some(next_block.clone());
@@ -475,7 +474,7 @@ fn handle_client_ws(
                 (c.get_height(), c.get_mining_candidate(session_miner_addr.lock().unwrap().clone()))
             };
             let last_h = *last_notified_height.lock().unwrap();
-            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or(Duration::from_secs(0)).as_secs();
 
             if h != last_h || now % 30 == 0 {
                 *current_block_template.lock().unwrap() = Some(next_block.clone());

@@ -462,11 +462,23 @@ impl Transaction {
              return true; // Mining rewards have no sender
          }
 
-        let public_key_bytes = hex::decode(&self.sender).expect("Invalid sender hex");
-        let public_key = VerifyingKey::from_sec1_bytes(&public_key_bytes).expect("Invalid public key");
+        let public_key_bytes = match hex::decode(&self.sender) {
+            Ok(bytes) => bytes,
+            Err(_) => return false,
+        };
+        let public_key = match VerifyingKey::from_sec1_bytes(&public_key_bytes) {
+            Ok(key) => key,
+            Err(_) => return false,
+        };
         
-        let signature_bytes = hex::decode(&self.signature).expect("Invalid signature hex");
-        let signature = Signature::from_der(&signature_bytes).expect("Invalid signature");
+        let signature_bytes = match hex::decode(&self.signature) {
+            Ok(bytes) => bytes,
+            Err(_) => return false,
+        };
+        let signature = match Signature::from_der(&signature_bytes) {
+            Ok(sig) => sig,
+            Err(_) => return false,
+        };
 
         // Advanced Security: Enforce Low-S (BIP-62)
         // If the S-value is "High" (greater than N/2), it is malleable.
