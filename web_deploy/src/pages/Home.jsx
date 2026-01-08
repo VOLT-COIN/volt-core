@@ -433,7 +433,7 @@ function Home() {
             </section>
 
             <footer style={{ marginTop: '100px', borderTop: '1px solid var(--glass-border)', padding: '40px 0', textAlign: 'center', color: 'var(--text-muted)' }}>
-                <p>Volt Blockchain © 2026 • Secured by Rust</p>
+                <p>Volt Blockchain © 2026 • Secured by Rust • v1.0.24</p>
                 <div style={{ marginTop: '10px', display: 'flex', gap: '20px', justifyContent: 'center' }}>
                     <span style={{ cursor: 'pointer' }} onClick={() => navigate('/whitepaper')}>Whitepaper</span>
                     <span style={{ cursor: 'pointer' }} onClick={() => navigate('/privacy')}>Privacy Policy</span>

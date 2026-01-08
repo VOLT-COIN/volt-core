@@ -152,7 +152,7 @@ function Status() {
             </div>
 
             <div style={{ marginTop: '50px', textAlign: 'center', color: '#444', fontSize: '0.8rem' }}>
-                Volt Core v1.0.23 • Automatic Refresh (5s)
+                Volt Core v1.0.24 • Automatic Refresh (5s)
             </div>
         </div>
     );
