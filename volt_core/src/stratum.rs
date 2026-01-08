@@ -492,19 +492,14 @@ fn process_rpc_request(
                         // Parse Nonce (Standard Stratum: BE Hex String -> u32 -> LE in Header)
                         if let Ok(n) = u32::from_str_radix(nonce_hex, 16) { block.proof_of_work = n; }
                         
-                        // Parse Time (Stratum can be messy: If we sent LE, we get LE back)
-                        // Try to parse as LE Bytes first given our notify format
-                        if let Ok(bytes) = hex::decode(ntime_hex) {
-                             if bytes.len() == 4 {
-                                 let mut b = [0u8; 4];
-                                 b.copy_from_slice(&bytes);
-                                 block.timestamp = u32::from_le_bytes(b) as u64;
-                             } else {
-                                 // Fallback
-                                 if let Ok(t) = u32::from_str_radix(ntime_hex, 16) { block.timestamp = t as u64; }
-                             }
+                        // Parse Time (Standard Stratum: BE Hex String -> u32 -> LE in Header)
+                        // Note: We sent ntime as BE Hex in notify. Miner should return it similarly.
+                        // We parse it as a number (BE), and Block::calculate_hash converts it to LE bytes.
+                        if let Ok(t) = u32::from_str_radix(ntime_hex, 16) { 
+                            block.timestamp = t as u64; 
                         } else {
-                             if let Ok(t) = u32::from_str_radix(ntime_hex, 16) { block.timestamp = t as u64; }
+                            // Fallback if hex parsing fails (unlikely)
+                            println!("[Stratum] ERROR: Failed to parse ntime: {}", ntime_hex);
                         }
                         
                         // DEBUG: Print Header Details
