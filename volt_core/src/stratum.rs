@@ -463,16 +463,49 @@ fn process_rpc_request(
                              tx.script_sig = crate::script::Script::new().push(crate::script::OpCode::OpPush(script_data));
                              block.transactions[0] = tx; // Store for valid chain data
                              
-                             // Calculate Full Merkle Root (Handles >1 transactions correctly)
-                             let root_be_hex = crate::block::Block::calculate_merkle_root(&block.transactions);
+                             // Force Merkle Root from Manual Coinbase (Exact match with Miner)
+                             // This bypasses potential serialization mismatches in Transaction struct
+                             let mut sha_tx = sha2::Sha256::new();
+                             sha_tx.update(&coinbase_bytes);
+                             let sha_tx_res = sha_tx.finalize();
+                             let mut sha_tx2 = sha2::Sha256::new();
+                             sha_tx2.update(&sha_tx_res);
+                             let coinbase_hash_manual = sha_tx2.finalize(); // Internal (BE)
                              
-                             // Stratum Compatibility: Reverse to Little Endian
-                             if let Ok(root_bytes) = hex::decode(&root_be_hex) {
-                                  let mut root_le = root_bytes;
-                                  root_le.reverse();
-                                  block.merkle_root = hex::encode(root_le);
+                             // Update Merkle Root
+                             if block.transactions.len() == 1 {
+                                 // Single Tx: Root = Coinbase Hash (Reversed for LE)
+                                 let mut root_le = coinbase_hash_manual.to_vec();
+                                 root_le.reverse();
+                                 block.merkle_root = hex::encode(root_le);
                              } else {
-                                  block.merkle_root = root_be_hex;
+                                 // Multi-Tx: Determine if we trust manual hash or struct hash
+                                 // Ideally we should trust manual hash for the FIRST element.
+                                 // Let's manually reconstruct the Merkle Tree with [coinbase_hash_manual, tx1, tx2...]
+                                 // But Block::calculate_merkle_root takes &Vec<Transaction>.
+                                 // We need to override it.
+                                 let mut hashes: Vec<Vec<u8>> = block.transactions.iter().skip(1).map(|t| t.get_hash()).collect();
+                                 hashes.insert(0, coinbase_hash_manual.to_vec());
+                                 
+                                 // Re-implement simplified Merkle Loop here to ensure consistency
+                                 while hashes.len() > 1 {
+                                     if hashes.len() % 2 != 0 { hashes.push(hashes.last().unwrap().clone()); }
+                                     let mut new_hashes = Vec::new();
+                                     for chunk in hashes.chunks(2) {
+                                         let mut hasher = sha2::Sha256::new();
+                                         hasher.update(&chunk[0]);
+                                         hasher.update(&chunk[1]);
+                                         let res = hasher.finalize();
+                                         let mut hasher2 = sha2::Sha256::new();
+                                         hasher2.update(res);
+                                         new_hashes.push(hasher2.finalize().to_vec());
+                                     }
+                                     hashes = new_hashes;
+                                 }
+                                 let root_be = hashes[0].clone();
+                                 let mut root_le = root_be;
+                                 root_le.reverse();
+                                 block.merkle_root = hex::encode(root_le);
                              }
                         }
 
