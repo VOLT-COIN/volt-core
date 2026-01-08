@@ -94,12 +94,19 @@ fn create_mining_notify(
        if hashes.len() > 1 { branch.push(hex::encode(&hashes[1])); }
     }
 
-    let bits = format!("{:08x}", next_block.difficulty);
-    let ntime = format!("{:08x}", next_block.timestamp);
+    // FIX: Stratum expects Little Endian Hex for header fields
+    // Version = 1 -> "01000000"
+    let version_hex = hex::encode(1u32.to_le_bytes());
+    
+    // Bits (Difficulty) 
+    let bits_hex = hex::encode(next_block.difficulty.to_le_bytes());
+    
+    // Time
+    let ntime_hex = hex::encode((next_block.timestamp as u32).to_le_bytes());
 
     serde_json::json!({
         "id": null, "method": "mining.notify",
-        "params": [ job_id, prev_hex, cb1, cb2, branch, "00000001", bits, ntime, true ]
+        "params": [ job_id, prev_hex, cb1, cb2, branch, version_hex, bits_hex, ntime_hex, true ]
     })
 } 
 
