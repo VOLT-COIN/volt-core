@@ -359,6 +359,8 @@ fn handle_client(
                 (c.get_height(), c.get_mining_candidate(miner_n.lock().unwrap().clone()))
             };
             let last_h = *height_n.lock().unwrap();
+            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or(Duration::from_secs(0)).as_secs();
+
             if h != last_h || now % 30 == 0 {
                 // Generate Notify JSON (Simplified)
                 *block_n.lock().unwrap() = Some(next_block.clone());
