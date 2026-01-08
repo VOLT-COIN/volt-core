@@ -606,27 +606,23 @@ fn process_rpc_request(
                                  return Some(serde_json::json!(true));
                              }
                         } else if is_valid_share {
-                            // Valid Share logic
-                            let effective_diff = if meets_target_strict { 0.001 } else { 0.000001 };
-                            
-                            println!("[Stratum] Accepted Share from {} (Hash: {}... Diff: {})", 
-                                session_miner_addr.lock().unwrap(), 
-                                &block.hash[0..8], 
-                                effective_diff
-                            );
+                            // Valid Share
+                            println!("[Stratum] Accepted Share from {} (Diff 0.001+)", session_miner_addr.lock().unwrap());
                             
                             let mut s_lock = shares_ref.lock().unwrap();
-                            if s_lock.len() > 5000 { s_lock.remove(0); }
+                            if s_lock.len() > 5000 { s_lock.remove(0); } // Prevent Memory Leak
                             let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or(std::time::Duration::from_secs(0)).as_secs();
                             
-                            s_lock.push(crate::stratum::Share { 
+                            s_lock.push(crate::stratum::Share { // Fully qualified just in case
                                 miner: session_miner_addr.lock().unwrap().clone(),
-                                difficulty: effective_diff, 
+                                difficulty: 0.001, 
                                 timestamp: now,
                             });
                             return Some(serde_json::json!(true));
                         } else {
                             println!("[Stratum] Rejected Share from {} - Hash: {}", session_miner_addr.lock().unwrap(), block.hash);
+                            // Return false to let miner know it was rejected? 
+                            // Stratum usually expects a bool result for submit.
                             return Some(serde_json::json!(false));
                         }
                     }
@@ -708,11 +704,12 @@ fn handle_client(
             let res = process_rpc_request(req.clone(), &chain, &mode_ref, &shares_ref, &wallet_ref, &session_miner_addr, &current_block_template, &is_authorized, &last_notified_height, &extra_nonce_1);
             
             if let Some(val) = res {
+            if let Some(val) = res {
                 // FIX: Send Explicit Difficulty Notification BEFORE Response
                 if req.method == "mining.subscribe" || req.method == "mining.authorize" {
-                    // Use Float 0.001 (Easier than 1) and send as Float to satisfy potential type checks
+                    // Use Difficulty 1 (Standard Integer) to robustly set miner target
                     let diff_notify = serde_json::json!({
-                        "id": null, "method": "mining.set_difficulty", "params": [0.001]
+                        "id": null, "method": "mining.set_difficulty", "params": [1]
                     });
                     if let Ok(s) = serde_json::to_string(&diff_notify) {
                          let _ = stream_writer_resp.write_all((s + "\n").as_bytes());
@@ -729,13 +726,14 @@ fn handle_client(
                 // Double check: Send AGAIN after response just in case miner ignored the first one
                 if req.method == "mining.subscribe" || req.method == "mining.authorize" {
                      let diff_notify = serde_json::json!({
-                        "id": null, "method": "mining.set_difficulty", "params": [0.001]
+                        "id": null, "method": "mining.set_difficulty", "params": [1]
                     });
                     if let Ok(s) = serde_json::to_string(&diff_notify) {
                          let _ = stream_writer_resp.write_all((s + "\n").as_bytes());
                          let _ = stream_writer_resp.flush();
                     }
                 }
+            }
             }
         }
     }
