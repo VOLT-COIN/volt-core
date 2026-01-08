@@ -708,19 +708,24 @@ fn handle_client(
             let res = process_rpc_request(req.clone(), &chain, &mode_ref, &shares_ref, &wallet_ref, &session_miner_addr, &current_block_template, &is_authorized, &last_notified_height, &extra_nonce_1);
             
             if let Some(val) = res {
-                let resp = RpcResponse { id: req.id, result: Some(val), error: None };
-                if let Ok(s) = serde_json::to_string(&resp) {
-                    let _ = stream_writer_resp.write_all((s + "\n").as_bytes());
-                }
+                // FIX: Send Explicit Difficulty Notification BEFORE Response
+                // This prevents the miner from starting to mine with Zero Difficulty (race condition)
+                // before it sees the difficulty setting.
                 if req.method == "mining.subscribe" || req.method == "mining.authorize" {
-                    // Send Difficulty 0.1 (Target ~ 0x09ffff...)
-                    // This ensures Miner has a valid target even if it skipped subscribe or didn't parse the first one.
+                    // Use Difficulty 1 (Standard) to ensure broad compatibility
                     let diff_notify = serde_json::json!({
-                        "id": null, "method": "mining.set_difficulty", "params": [0.1]
+                        "id": null, "method": "mining.set_difficulty", "params": [1] // Integer 1
                     });
                     if let Ok(s) = serde_json::to_string(&diff_notify) {
                          let _ = stream_writer_resp.write_all((s + "\n").as_bytes());
+                         let _ = stream_writer_resp.flush();
                     }
+                }
+
+                let resp = RpcResponse { id: req.id, result: Some(val), error: None };
+                if let Ok(s) = serde_json::to_string(&resp) {
+                    let _ = stream_writer_resp.write_all((s + "\n").as_bytes());
+                    let _ = stream_writer_resp.flush();
                 }
             }
         }
