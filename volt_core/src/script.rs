@@ -81,14 +81,14 @@ impl VirtualMachine {
                 },
                 OpCode::OpEqualVerify => {
                     if self.stack.len() < 2 { return false; }
-                    let a = self.stack.pop().unwrap();
-                    let b = self.stack.pop().unwrap();
+                    let a = if let Some(v) = self.stack.pop() { v } else { return false; };
+                    let b = if let Some(v) = self.stack.pop() { v } else { return false; };
                     if a != b { return false; }
                 },
                 OpCode::OpCheckSig => {
                     if self.stack.len() < 2 { return false; }
-                    let pub_key_bytes = self.stack.pop().unwrap();
-                    let sig_bytes = self.stack.pop().unwrap();
+                    let pub_key_bytes = if let Some(v) = self.stack.pop() { v } else { return false; };
+                    let sig_bytes = if let Some(v) = self.stack.pop() { v } else { return false; };
                     
                     // Verify Signature
                     // 1. Decode PubKey
