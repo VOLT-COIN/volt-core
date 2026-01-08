@@ -465,7 +465,7 @@ fn handle_client(
                 let reward = next_block.transactions[0].amount;
                 let amt_hex = hex::encode(reward.to_le_bytes());
                 let h_bytes = (next_block.index as u32).to_le_bytes();
-                let h_push = format!("04{}", hex::encode(h_bytes));
+                let h_push = format!("0c{}", hex::encode(h_bytes));
                 // Dynamic P2PKH Script Generation (Use Server Wallet for Pool)
                 let pool_addr_hex = wallet_n.lock().unwrap().get_address();
                 let pub_key_bytes = hex::decode(&pool_addr_hex).unwrap_or(vec![0;33]); // Default to 0 if invalid
