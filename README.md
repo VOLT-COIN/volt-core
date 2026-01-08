@@ -64,3 +64,7 @@ Contributions are welcome! Please check the `implementation_plan.md` for active 
 
 ## 📄 License
 MIT License
+
+## ❤️ Donate
+**USDT (TRC20)**: `TDone8gQNXR1vuCNMyULnqFw81Q6PNw45Q`
+
