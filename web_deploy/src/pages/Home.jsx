@@ -418,8 +418,8 @@ function Home() {
                 <h2 style={{ fontSize: '2rem', marginBottom: '30px', textAlign: 'center' }}>FAQ</h2>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
                     <div className="glass-card">
-                        <h4 style={{ marginBottom: '10px', color: '#fff' }}>How do I start mining?</h4>
-                        <p style={{ color: 'var(--text-muted)' }}>Download the Volt Core Node, sync the blockchain, and point your CPU/GPU miner to the pool address `wss://voltcore-node.hf.space`.</p>
+                        <h3 style={{ fontSize: '1.5rem', marginBottom: '10px' }}>How do I start mining?</h3>
+                        <p style={{ color: 'var(--text-muted)' }}>Download the Volt Core Node, sync the blockchain, and point your CPU/ASIC miner to the pool address `stratum+tcp://82.201.143.174:3333`.</p>
                     </div>
                     <div className="glass-card">
                         <h4 style={{ marginBottom: '10px', color: '#fff' }}>What is the max supply?</h4>
