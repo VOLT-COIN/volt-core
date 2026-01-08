@@ -432,8 +432,12 @@ fn process_rpc_request(
                              
                              // CRITICAL FIX: Manually set Merkle Root to valid Coinbase Hash (Legacy compat)
                              // Block::calculate_merkle_root uses internal hashing which might differ for Stratum blobs.
-                             // Since it's a 1-tx block, Merkle Root == Coinbase Hash.
-                             block.merkle_root = hex::encode(coinbase_hash);
+                             // Stratum Miners expect Little Endian (Reversed) Merkle Root in the header.
+                             // Block::calculate_hash uses merkle_root as-is.
+                             // So we must REVERSE it here so calculate_hash produces a header matching the miner's.
+                             let mut params_hash = coinbase_hash.to_vec();
+                             params_hash.reverse();
+                             block.merkle_root = hex::encode(params_hash);
                         }
 
                         if let Ok(n) = u32::from_str_radix(nonce_hex, 16) { block.proof_of_work = n; }
