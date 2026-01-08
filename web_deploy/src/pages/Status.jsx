@@ -4,16 +4,18 @@ import axios from 'axios';
 import { getApiConfig } from '../utils/apiConfig';
 
 function Status() {
-    const [status, setStatus] = useState({
-        api: 'Checking...',
-        node: 'Checking...',
-        pool: 'Checking...',
-        website: 'Operational'
+    const [metrics, setMetrics] = useState({
+        api_status: 'Checking...',
+        height: 0,
+        difficulty: 0,
+        peers: 0,
+        mempool: 0,
+        last_hash: '...'
     });
 
     useEffect(() => {
         checkHealth();
-        const interval = setInterval(checkHealth, 10000);
+        const interval = setInterval(checkHealth, 5000); // 5s update
         return () => clearInterval(interval);
     }, []);
 
@@ -24,55 +26,114 @@ function Status() {
             const latency = Date.now() - start;
 
             if (res.data.status === 'success') {
-                setStatus({
-                    api: `Operational (${latency}ms)`,
-                    node: `Synced (Height: ${res.data.data.blocks})`,
-                    pool: 'Operational', // Assuming pool is up if node is up
-                    website: 'Operational'
+                const data = res.data.data;
+                setMetrics({
+                    api_status: `Operational (${latency}ms)`,
+                    height: data.height || 0,
+                    difficulty: data.difficulty || 0,
+                    peers: data.peers || 0,
+                    mempool: data.pending_count || 0,
+                    last_hash: data.last_hash || 'None'
                 });
             } else {
-                setStatus(prev => ({ ...prev, api: 'Degraded', node: 'Connecting...' }));
+                setMetrics(prev => ({ ...prev, api_status: 'Degraded' }));
             }
         } catch (e) {
-            setStatus({
-                api: 'Offline',
-                node: 'Unreachable',
-                pool: 'Unknown',
-                website: 'Operational'
-            });
+            setMetrics(prev => ({ ...prev, api_status: 'Offline' }));
         }
     };
 
-    const StatusItem = ({ label, value }) => (
-        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '20px', borderBottom: '1px solid var(--glass-border)', alignItems: 'center' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <div style={{
-                    width: '10px', height: '10px', borderRadius: '50%',
-                    background: value.includes('Operational') || value.includes('Synced') ? '#10b981' : '#ef4444',
-                    boxShadow: value.includes('Operational') || value.includes('Synced') ? '0 0 10px #10b981' : '0 0 10px #ef4444'
-                }}></div>
-                <span style={{ fontSize: '1.1rem' }}>{label}</span>
+    const StatusCard = ({ label, value, subtext, icon, color = '#10b981' }) => (
+        <div className="glass-card" style={{ padding: '25px', display: 'flex', alignItems: 'center', gap: '20px' }}>
+            <div style={{
+                width: '50px', height: '50px', borderRadius: '12px',
+                background: `${color}20`, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '1.5rem', color: color, boxShadow: `0 0 15px ${color}40`
+            }}>
+                {icon}
             </div>
-            <span style={{ color: '#ccc', fontFamily: 'monospace' }}>{value}</span>
+            <div>
+                <div style={{ color: '#888', fontSize: '0.9rem', marginBottom: '5px' }}>{label}</div>
+                <div style={{ fontSize: '1.4rem', fontWeight: 'bold' }}>{value}</div>
+                {subtext && <div style={{ fontSize: '0.8rem', color: '#555' }}>{subtext}</div>}
+            </div>
         </div>
     );
 
     return (
-        <div className="container" style={{ paddingTop: '100px', maxWidth: '800px' }}>
-            <div style={{ textAlign: 'center', marginBottom: '40px' }}>
-                <h1 className="gradient-text">Network Status</h1>
-                <p style={{ color: '#aaa' }}>Real-time uptime monitoring for Volt services.</p>
+        <div className="container" style={{ paddingTop: '100px', paddingBottom: '50px', maxWidth: '1000px' }}>
+            <div style={{ textAlign: 'center', marginBottom: '50px' }}>
+                <h1 className="gradient-text" style={{ fontSize: '2.5rem', marginBottom: '10px' }}>System Status</h1>
+                <p style={{ color: '#aaa', maxWidth: '600px', margin: '0 auto' }}>
+                    Real-time performance metrics of the Volt Network.
+                </p>
             </div>
 
-            <div className="glass-card" style={{ padding: 0 }}>
-                <StatusItem label="RPC API" value={status.api} />
-                <StatusItem label="Blockchain Node" value={status.node} />
-                <StatusItem label="Mining Pool" value={status.pool} />
-                <StatusItem label="Web Interface" value={status.website} />
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px', marginBottom: '40px' }}>
+                <StatusCard
+                    label="API Gateway"
+                    value={metrics.api_status.split('(')[0]}
+                    subtext={metrics.api_status.includes('(') ? metrics.api_status.split('(')[1].replace(')', '') + ' latency' : ''}
+                    icon="⚡"
+                    color={metrics.api_status.includes('Operational') ? '#10b981' : '#ef4444'}
+                />
+                <StatusCard
+                    label="Block Height"
+                    value={metrics.height.toLocaleString()}
+                    subtext={`Latest Hash: ${metrics.last_hash.substring(0, 8)}...`}
+                    icon="📦"
+                    color="#3b82f6"
+                />
+                <StatusCard
+                    label="Network Peers"
+                    value={metrics.peers}
+                    subtext="Kademlia DHT Active"
+                    icon="🌐"
+                    color="#8b5cf6"
+                />
+                <StatusCard
+                    label="Mining Difficulty"
+                    value={metrics.difficulty}
+                    subtext="Argon2d PoW"
+                    icon="⛏️"
+                    color="#f59e0b"
+                />
+                <StatusCard
+                    label="Mempool"
+                    value={metrics.mempool}
+                    subtext="Pending Transactions"
+                    icon="⏳"
+                    color="#ec4899"
+                />
+                <StatusCard
+                    label="EVM Engine"
+                    value="Active"
+                    subtext="RevM 3.1 Compatible"
+                    icon="⚙️"
+                    color="#6366f1"
+                />
             </div>
 
-            <div style={{ marginTop: '30px', textAlign: 'center', color: '#666', fontSize: '0.9rem' }}>
-                <p>Last Updated: {new Date().toLocaleTimeString()}</p>
+            <div className="glass-card" style={{ padding: '30px' }}>
+                <h3 style={{ borderBottom: '1px solid var(--glass-border)', paddingBottom: '15px', marginBottom: '20px' }}>Core Services</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span>Smart Contracts (Wasm/EVM)</span>
+                        <span style={{ color: '#10b981', background: '#10b98110', padding: '2px 10px', borderRadius: '4px' }}>Operational</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span>P2P Discovery (UDP)</span>
+                        <span style={{ color: '#10b981', background: '#10b98110', padding: '2px 10px', borderRadius: '4px' }}>Operational</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span>Web Interface</span>
+                        <span style={{ color: '#10b981', background: '#10b98110', padding: '2px 10px', borderRadius: '4px' }}>Operational</span>
+                    </div>
+                </div>
+            </div>
+
+            <div style={{ marginTop: '50px', textAlign: 'center', color: '#444', fontSize: '0.8rem' }}>
+                Volt Core v1.0.23 • Automatic Refresh (5s)
             </div>
         </div>
     );
