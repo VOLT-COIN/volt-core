@@ -103,13 +103,23 @@ fn create_mining_notify(
     })
 } 
 
+// Optimization: Shared Job State to reduce Mutex Contention
+struct JobState {
+    job_id: String,
+    notify_json: serde_json::Value,
+    block_template: Option<crate::block::Block>,
+    difficulty: u32,
+    timestamp: u64,
+}
+
 pub struct StratumServer {
     blockchain: Arc<Mutex<Blockchain>>,
     port: u16,
     pool_mode: Arc<Mutex<PoolMode>>,
     shares: Arc<Mutex<Vec<Share>>>,
     server_wallet: Arc<Mutex<Wallet>>,
-    active_connections: Arc<AtomicUsize>, // Added DoS protection
+    active_connections: Arc<AtomicUsize>,
+    shared_job: Arc<Mutex<JobState>>, // Global Job Source
 }
 
 impl StratumServer {
@@ -121,6 +131,13 @@ impl StratumServer {
             shares,
             server_wallet,
             active_connections: Arc::new(AtomicUsize::new(0)),
+            shared_job: Arc::new(Mutex::new(JobState {
+                job_id: "INIT".to_string(),
+                notify_json: serde_json::Value::Null,
+                block_template: None,
+                difficulty: 0,
+                timestamp: 0
+            })),
         }
     }
 
@@ -131,7 +148,66 @@ impl StratumServer {
         let shares_ref = self.shares.clone();
         let wallet_ref = self.server_wallet.clone();
         let active_conns = self.active_connections.clone();
+        let shared_job = self.shared_job.clone();
         
+        // -------------------------------------------------------------
+        // GLOBAL JOB UPDATER (High Efficiency)
+        // -------------------------------------------------------------
+        {
+            let chain = chain_ref.clone();
+            let wallet = wallet_ref.clone();
+            let job_state = shared_job.clone();
+            
+            thread::spawn(move || {
+                let miner_addr = "SYSTEM_POOL".to_string(); // Placeholder, internal generator
+                println!("[Stratum] Job Updater Thread Started");
+                
+                loop {
+                    thread::sleep(Duration::from_millis(500));
+                    
+                    let (h, next_block) = {
+                        let c = chain.lock().unwrap();
+                         // Optimization: Don't get candidate if height hasn't changed AND time < 30s?
+                         // For now, keep logic simple: Get candidate.
+                        (c.get_height(), c.get_mining_candidate(miner_addr.clone()))
+                    };
+                    
+                    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or(Duration::from_secs(0)).as_secs();
+                    
+                    // Check if update needed
+                    let mut update_needed = false;
+                    {
+                        let state = job_state.lock().unwrap();
+                        let last_h = state.block_template.as_ref().map(|b| b.index).unwrap_or(0);
+                        if h != last_h || now % 10 == 0 { // Update every 10s or new block
+                            update_needed = true;
+                        }
+                    }
+                    
+                    if update_needed {
+                         let job_id = format!("{}_{}", next_block.index, next_block.timestamp);
+                         let pool_addr = wallet.lock().unwrap().get_address();
+                         
+                         if pool_addr == "LOCKED" {
+                             println!("[Stratum] WARNING: Wallet LOCKED. Cannot generate valid jobs.");
+                             continue;
+                         }
+
+                         let notify = create_mining_notify(&next_block, &job_id, &pool_addr);
+                         
+                         let mut state = job_state.lock().unwrap();
+                         state.job_id = job_id;
+                         state.notify_json = notify;
+                         state.block_template = Some(next_block.clone());
+                         state.difficulty = next_block.difficulty;
+                         state.timestamp = next_block.timestamp;
+                    }
+                }
+            });
+        }
+        
+        let shared_job_workers = self.shared_job.clone();
+
         thread::spawn(move || {
             let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).expect("Failed to bind Stratum port");
             println!("[Stratum] Listening on 0.0.0.0:{} [Mode: {:?}]", port, *mode_ref.lock().unwrap());
@@ -152,6 +228,7 @@ impl StratumServer {
                         let shares = shares_ref.clone();
                         let wallet = wallet_ref.clone();
                         let active_conns_inner = active_conns.clone();
+                        let job_source = shared_job_workers.clone();
 
                         thread::spawn(move || {
                             // Protocol Detection
@@ -164,12 +241,12 @@ impl StratumServer {
                             if is_websocket {
                                 match tungstenite::accept(stream) {
                                     Ok(socket) => {
-                                        handle_client_ws(socket, chain, mode, shares, wallet);
+                                        handle_client_ws(socket, chain, mode, shares, wallet, job_source);
                                     }
                                     Err(e) => println!("[Stratum] WS Handshake Failed: {}", e),
                                 }
                             } else {
-                                handle_client(stream, chain, mode, shares, wallet);
+                                handle_client(stream, chain, mode, shares, wallet, job_source);
                             }
                             
                             // Connection Closed - Decrement
@@ -576,47 +653,48 @@ fn handle_client(
 }
 
 // -------------------------------------------------------------------------
-// WEBSOCKET HANDLER (New)
+// WEBSOCKET HANDLER
 // -------------------------------------------------------------------------
 fn handle_client_ws(
     mut socket: WebSocket<TcpStream>, 
     chain: Arc<Mutex<Blockchain>>, 
     mode_ref: Arc<Mutex<PoolMode>>,
     shares_ref: Arc<Mutex<Vec<Share>>>,
-    wallet_ref: Arc<Mutex<Wallet>>
+    wallet_ref: Arc<Mutex<Wallet>>,
+    job_source: Arc<Mutex<JobState>> // New Arg
 ) {
     println!("[Stratum WS] Client connected via WebSocket");
     
     // Set Timeout for Loop
     if let Some(stream) = socket.get_mut().try_clone().ok() {
-        let _ = stream.set_read_timeout(Some(Duration::from_millis(500)));
+        let _ = stream.set_read_timeout(Some(Duration::from_millis(100))); // Fast check
     }
 
     let session_miner_addr = Arc::new(Mutex::new("SYSTEM_POOL".to_string()));
     let current_block_template = Arc::new(Mutex::new(None::<crate::block::Block>));
     let is_authorized = Arc::new(Mutex::new(false));
+    let last_job_id = Arc::new(Mutex::new("".to_string()));
     let last_notified_height = Arc::new(Mutex::new(0u64));
 
     loop {
-        // 1. Check Notifications (Inline)
+        // 1. Check Notifications (Inline - Single Threaded Loop)
         if *is_authorized.lock().unwrap() {
-             let (h, next_block) = {
-                let c = chain.lock().unwrap();
-                (c.get_height(), c.get_mining_candidate(session_miner_addr.lock().unwrap().clone()))
+            let (new_notify, new_block, new_id) = {
+                 let state = job_source.lock().unwrap();
+                 if state.job_id != "INIT" {
+                     let my_last = last_job_id.lock().unwrap().clone();
+                     if state.job_id != my_last {
+                        (Some(state.notify_json.clone()), state.block_template.clone(), state.job_id.clone())
+                     } else {
+                        (None, None, "".to_string())
+                     }
+                 } else { (None, None, "".to_string()) }
             };
-            let last_h = *last_notified_height.lock().unwrap();
-            let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or(Duration::from_secs(0)).as_secs();
 
-            if h != last_h || now % 30 == 0 {
-                *current_block_template.lock().unwrap() = Some(next_block.clone());
-                *last_notified_height.lock().unwrap() = h;
+            if let Some(notify) = new_notify {
+                *current_block_template.lock().unwrap() = new_block;
+                *last_job_id.lock().unwrap() = new_id;
                 
-                // Gen and Send Logic (Duplicated from TCP for now, ideally extract)
-                let job_id = format!("{}_{}", next_block.index, next_block.timestamp);
-                
-                let pool_addr_hex = wallet_ref.lock().unwrap().get_address();
-                let notify = create_mining_notify(&next_block, &job_id, &pool_addr_hex);
-
                 if let Ok(s) = serde_json::to_string(&notify) {
                      let _ = socket.send(Message::Text(s));
                 }
