@@ -27,6 +27,7 @@ pub enum Message {
     // P2P Hardening
     Ping,
     Pong,
+    Handshake { node_id: crate::kademlia::NodeId, listen_port: u16 },
 }
 
 pub struct Node {
@@ -124,6 +125,7 @@ impl Node {
                                          let peer = crate::kademlia::Peer {
                                              id: node_id,
                                              address: peer_addr_str,
+                                             last_seen: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
                                          };
                                          routing_table.lock().unwrap().add_peer(peer);
                                          Ok(None)

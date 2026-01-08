@@ -61,7 +61,7 @@ impl EvmRunner {
         match result {
             ExecutionResult::Success { reason: _, gas_used, gas_refunded: _, logs: _, output } => {
                 match output {
-                    Output::create(_bytes, address) => {
+                    Output::Create(_bytes, address) => {
                          // Contract Deployed
                          // Return: (AddressString, Empty, GasUsed)
                          let addr_str = format!("{:?}", address.unwrap_or_default());

@@ -37,6 +37,7 @@ revm = { version = "3.1", default-features = false, features = ["std", "serde"] 
 bytes = "1.4"
 hex-literal = "0.4"
 primitive-types = "0.12"
+bech32 = "0.9"
 # GUI (Disabled)
 # eframe = "0.27.0"
 # egui = "0.27.0"
