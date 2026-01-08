@@ -68,35 +68,42 @@ impl Block {
     }
 
     pub fn calculate_hash(&self) -> String {
-        // Bitcoin Header Format (80 bytes) - Modified for Volt (Big Endian / No Reverse)
+        // Bitcoin Header Format (80 bytes)
         // Version (4) + PrevBlock (32) + MerkleRoot (32) + Timestamp (4) + Bits (4) + Nonce (4)
         
         let version: u32 = self.version; 
         let mut bytes = Vec::new();
         
-        // Version (BE)
-        bytes.extend(&version.to_be_bytes());
+        bytes.extend(&version.to_le_bytes()); // 4
         
-        // PrevHash (32 bytes) - BE (No Reverse)
+        // PrevHash (32 bytes) - handle genesis "0"
         let prev_hash_bytes = if self.previous_hash == "0" {
             vec![0u8; 32]
         } else {
-            hex::decode(&self.previous_hash).unwrap_or(vec![0u8; 32])
+             hex::decode(&self.previous_hash).unwrap_or(vec![0u8; 32])
         };
-        bytes.extend(&prev_hash_bytes); 
+        // Use Little Endian (Reverse bytes) for Bitcoin Header Compatibility
+        let mut prev_le = prev_hash_bytes;
+        prev_le.reverse();
+        bytes.extend(&prev_le); 
         
-        // Merkle Root (32 bytes) - BE (No Reverse)
+        // Merkle Root (32 bytes)
         let merkle_bytes = hex::decode(&self.merkle_root).unwrap_or(vec![0u8; 32]);
+        // Standard Merkle Root (Internal Order - Do NOT Reverse)
+        // Stratum miners provide reversed root, so we expect merkle_root to be reversed externally if needed?
+        // No, calculate_hash should expect standard internal root. 
+        // BUT for Stratum compatibility we handle usage in stratum.rs
+        // This function takes "merkle_root" string.
         bytes.extend(&merkle_bytes); 
         
-        // Timestamp (BE)
-        bytes.extend(&(self.timestamp as u32).to_be_bytes());
+        // Timestamp (4 bytes)
+        bytes.extend(&(self.timestamp as u32).to_le_bytes());
         
-        // Bits/Difficulty (BE)
-        bytes.extend(&self.difficulty.to_be_bytes());
+        // Bits/Difficulty (4 bytes)
+        bytes.extend(&self.difficulty.to_le_bytes());
 
-        // Nonce (BE)
-        bytes.extend(&self.proof_of_work.to_be_bytes());
+        // Nonce (4 bytes)
+        bytes.extend(&self.proof_of_work.to_le_bytes());
 
         // DEBUG: Print Header
         // Ensure it is 80 bytes
