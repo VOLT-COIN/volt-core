@@ -345,18 +345,20 @@ fn process_rpc_request(
     chain: &Arc<Mutex<Blockchain>>,
     _mode_ref: &Arc<Mutex<PoolMode>>,
     shares_ref: &Arc<Mutex<Vec<Share>>>,
-    server_wallet: &Arc<Mutex<Wallet>>, // Added
+    server_wallet: &Arc<Mutex<Wallet>>,
     session_miner_addr: &Arc<Mutex<String>>,
     current_block_template: &Arc<Mutex<Option<crate::block::Block>>>,
     is_authorized: &Arc<Mutex<bool>>,
-    last_notified_height: &Arc<Mutex<u64>>
+    last_notified_height: &Arc<Mutex<u64>>,
+    extra_nonce_1_ref: &Arc<Mutex<String>> // Added
 ) -> Option<serde_json::Value> {
     
     match req.method.as_str() {
         "mining.subscribe" => {
+            let en1 = extra_nonce_1_ref.lock().unwrap().clone();
             Some(serde_json::json!([
                 [ ["mining.set_difficulty", "0.1"], ["mining.notify", "1"] ],
-                "00000000", 4
+                en1, 4
             ]))
         },
         "mining.authorize" => {
@@ -409,7 +411,7 @@ fn process_rpc_request(
                         let pub_key_hash_hex = hex::encode(pub_key_hash);
                         
                         let coinb2 = format!("ffffffff01{}1976a914{}88ac00000000", amt_hex, pub_key_hash_hex);
-                        let extra_nonce_1 = "00000000";
+                        let extra_nonce_1 = extra_nonce_1_ref.lock().unwrap().clone();
                         let coinb = format!("{}{}{}{}", coinb1, extra_nonce_1, ex2, coinb2);
                         
                         if let Ok(coinbase_bytes) = hex::decode(&coinb) {
@@ -621,7 +623,7 @@ fn handle_client(
         line.clear();
         if reader.read_line(&mut line).unwrap_or(0) == 0 { break; }
         if let Ok(req) = serde_json::from_str::<RpcRequest>(&line) {
-            let res = process_rpc_request(req.clone(), &chain, &mode_ref, &shares_ref, &wallet_ref, &session_miner_addr, &current_block_template, &is_authorized, &last_notified_height);
+            let res = process_rpc_request(req.clone(), &chain, &mode_ref, &shares_ref, &wallet_ref, &session_miner_addr, &current_block_template, &is_authorized, &last_notified_height, &extra_nonce_1);
             
             if let Some(val) = res {
                 let resp = RpcResponse { id: req.id, result: Some(val), error: None };
@@ -665,6 +667,13 @@ fn handle_client_ws(
     let is_authorized = Arc::new(Mutex::new(false));
     let last_job_id = Arc::new(Mutex::new("".to_string()));
     let last_notified_height = Arc::new(Mutex::new(0u64));
+    
+    // Generate Unique ExtraNonce1 (Random 4 bytes hex)
+    use rand::Rng;
+    let mut rng = rand::thread_rng();
+    let random_u32: u32 = rng.gen();
+    let extra_nonce_1_val = format!("{:08x}", random_u32);
+    let extra_nonce_1 = Arc::new(Mutex::new(extra_nonce_1_val)); // Session State
 
     loop {
         // 1. Check Notifications (Inline - Single Threaded Loop)
@@ -697,7 +706,7 @@ fn handle_client_ws(
                 if msg.is_text() || msg.is_binary() {
                     let text = msg.to_text().unwrap_or("");
                     if let Ok(req) = serde_json::from_str::<RpcRequest>(text) {
-                        let res = process_rpc_request(req.clone(), &chain, &mode_ref, &shares_ref, &wallet_ref, &session_miner_addr, &current_block_template, &is_authorized, &last_notified_height);
+                        let res = process_rpc_request(req.clone(), &chain, &mode_ref, &shares_ref, &wallet_ref, &session_miner_addr, &current_block_template, &is_authorized, &last_notified_height, &extra_nonce_1);
                         
                         if let Some(val) = res {
                             let resp = RpcResponse { id: req.id, result: Some(val), error: None };
