@@ -60,7 +60,7 @@ const Guide = () => {
                     <h2 className="text-2xl font-bold mb-4 text-white">4. Mining Guide</h2>
                     <p className="mb-2 text-slate-300">To mine Volt (VLT), use an external miner (like cpuminer-opt).</p>
                     <div className="bg-slate-900 p-4 rounded border border-slate-700 font-mono text-sm text-green-400 overflow-x-auto">
-                        cpuminer -a sha256d -o stratum+tcp://volt-core.zapto.org:3333 -u &lt;YOUR_ADDRESS&gt; -p x
+                        cpuminer -a sha256d -o stratum+tcp://82.201.143.174:3333 -u &lt;YOUR_ADDRESS&gt; -p x
                     </div>
                 </section>
 

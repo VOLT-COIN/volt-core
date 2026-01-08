@@ -79,9 +79,7 @@ function Wallet() {
         }
     };
 
-    // --- SETTINGS (Node URL & RPC Auth) ---
-    const [rpcPass, setRpcPass] = useState(localStorage.getItem('rpc_password') || '');
-    const [nodeUrl, setNodeUrl] = useState(localStorage.getItem('volt_node_url') || 'http://volt-core.zapto.org:6001');
+
 
     const fetchBalance = async (address) => {
         try {
@@ -198,9 +196,7 @@ function Wallet() {
 
     if (view === 'entry') return (
         <Wrapper title="Volt Web Wallet" error={error} success={success}>
-            <div style={{ position: 'absolute', top: 10, right: 10 }}>
-                <button onClick={() => setView('settings')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1.5rem' }}>⚙️</button>
-            </div>
+
             <div style={{ display: 'grid', gap: '20px' }}>
                 <button className="glass-card" onClick={handleCreate} style={{ cursor: 'pointer', textAlign: 'left', padding: '20px' }}>
                     <div style={{ fontSize: '2rem', marginBottom: '10px' }}>🆕</div>
@@ -216,39 +212,7 @@ function Wallet() {
         </Wrapper>
     );
 
-    if (view === 'settings') return (
-        <Wrapper title="Settings" error={error} success={success}>
-            <div style={{ textAlign: 'left', marginBottom: '20px' }}>
-                <label style={{ color: '#00f2ea', fontWeight: 'bold', marginLeft: '10px' }}>Node URL</label>
-                <input
-                    type="text"
-                    placeholder="e.g. http://bore.pub:38517"
-                    value={nodeUrl}
-                    onChange={e => setNodeUrl(e.target.value)}
-                    style={{ marginBottom: '15px' }}
-                />
 
-                <label style={{ color: '#888', marginLeft: '10px' }}>RPC Password (Optional)</label>
-                <input
-                    type="password"
-                    placeholder="Default: volt"
-                    value={rpcPass}
-                    onChange={e => setRpcPass(e.target.value)}
-                />
-                <p style={{ fontSize: '0.8rem', color: '#666', marginTop: '5px' }}>Leave password empty for read-only access.</p>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                <button className="btn btn-secondary" onClick={() => setView('entry')}>Cancel</button>
-                <button className="btn btn-primary" onClick={() => {
-                    localStorage.setItem('rpc_password', rpcPass);
-                    localStorage.setItem('volt_node_url', nodeUrl); // Save Node URL
-                    setView('entry');
-                    setSuccess("Settings Saved");
-                    setTimeout(() => setSuccess(null), 2000);
-                }}>Save</button>
-            </div>
-        </Wrapper>
-    );
 
     if (view === 'create') return (
         <Wrapper title="Secret Recovery Phrase" error={error} success={success}>
