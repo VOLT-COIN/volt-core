@@ -5,7 +5,7 @@ function Layout({ children }) {
         <div className="container">
             <nav className="navbar">
                 <div className="logo">
-                    <img src="/logo.svg" alt="Volt Logo" style={{ height: '40px', verticalAlign: 'middle', marginRight: '10px' }} />
+                    <img src="/logo.png?v=2" alt="Volt Logo" style={{ height: '40px', verticalAlign: 'middle', marginRight: '10px' }} />
                     VOLT COIN
                 </div>
                 <div className="nav-links">

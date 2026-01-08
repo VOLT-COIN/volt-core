@@ -63,7 +63,7 @@ function Status() {
     return (
         <div className="container" style={{ paddingTop: '100px', paddingBottom: '50px', maxWidth: '1000px' }}>
             <div style={{ textAlign: 'center', marginBottom: '50px' }}>
-                <img src="/logo.svg" alt="Volt Logo" style={{ width: '80px', height: '80px', marginBottom: '20px' }} />
+                <img src="/logo.png?v=2" alt="Volt Logo" style={{ width: '80px', height: '80px', marginBottom: '20px' }} />
                 <h1 className="gradient-text" style={{ fontSize: '2.5rem', marginBottom: '10px' }}>System Status</h1>
                 <p style={{ color: '#aaa', maxWidth: '600px', margin: '0 auto' }}>
                     Real-time performance metrics of the Volt Network.
