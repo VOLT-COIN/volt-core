@@ -94,7 +94,8 @@ fn main() {
     }
 
     // Check for External Address (VLT prefix OR Hex string)
-    let external_addr_flag = args.iter().find(|a| 
+    // Fix: Skip first argument to avoid capturing executable path
+    let external_addr_flag = args.iter().skip(1).find(|a| 
         !a.starts_with("--") && a.len() > 20 && !a.contains("nodisplay") 
     );
     let _use_external = external_addr_flag.is_some();
