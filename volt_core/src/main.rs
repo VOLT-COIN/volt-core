@@ -133,7 +133,7 @@ fn main() {
 
     // 7. Stratum Servers
     log(&format!("[Stratum] Starting Single PPLNS Server (Port: {})...", stratum_base), &logs);
-    let s1 = StratumServer::new(blockchain.clone(), stratum_base, stratum::PoolMode::PPLNS, shares.clone()); s1.start();
+    let s1 = StratumServer::new(blockchain.clone(), stratum_base, stratum::PoolMode::PPLNS, shares.clone(), miner_wallet.clone()); s1.start();
     // let s2 = StratumServer::new(blockchain.clone(), stratum_base + 1, stratum::PoolMode::PPS); s2.start();
     // let s3 = StratumServer::new(blockchain.clone(), stratum_base + 2, stratum::PoolMode::SOLO); s3.start();
     // let s4 = StratumServer::new(blockchain.clone(), stratum_base + 3, stratum::PoolMode::FPPS); s4.start();

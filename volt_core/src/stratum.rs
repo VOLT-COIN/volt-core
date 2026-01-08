@@ -15,6 +15,7 @@ struct RpcRequest {
 }
 
 use ripemd::{Ripemd160, Digest}; // Added for P2PKH
+use crate::wallet::Wallet;
 
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -48,15 +49,17 @@ pub struct StratumServer {
     port: u16,
     pool_mode: Arc<Mutex<PoolMode>>,
     shares: Arc<Mutex<Vec<Share>>>,
+    server_wallet: Arc<Mutex<Wallet>>,
 }
 
 impl StratumServer {
-    pub fn new(blockchain: Arc<Mutex<Blockchain>>, port: u16, mode: PoolMode, shares: Arc<Mutex<Vec<Share>>>) -> Self {
+    pub fn new(blockchain: Arc<Mutex<Blockchain>>, port: u16, mode: PoolMode, shares: Arc<Mutex<Vec<Share>>>, server_wallet: Arc<Mutex<Wallet>>) -> Self {
         StratumServer { 
             blockchain, 
             port,
             pool_mode: Arc::new(Mutex::new(mode)),
             shares,
+            server_wallet,
         }
     }
 
@@ -65,6 +68,7 @@ impl StratumServer {
         let chain_ref = self.blockchain.clone();
         let mode_ref = self.pool_mode.clone();
         let shares_ref = self.shares.clone();
+        let wallet_ref = self.server_wallet.clone();
         
         thread::spawn(move || {
             let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).expect("Failed to bind Stratum port");
@@ -76,6 +80,7 @@ impl StratumServer {
                         let chain = chain_ref.clone();
                         let mode = mode_ref.clone();
                         let shares = shares_ref.clone();
+                        let wallet = wallet_ref.clone();
 
                         thread::spawn(move || {
                             // Protocol Detection
@@ -87,12 +92,12 @@ impl StratumServer {
                             if is_websocket {
                                 match tungstenite::accept(stream) {
                                     Ok(socket) => {
-                                        handle_client_ws(socket, chain, mode, shares);
+                                        handle_client_ws(socket, chain, mode, shares, wallet);
                                     }
                                     Err(e) => println!("[Stratum] WS Handshake Failed: {}", e),
                                 }
                             } else {
-                                handle_client(stream, chain, mode, shares);
+                                handle_client(stream, chain, mode, shares, wallet);
                             }
                         });
                     }
@@ -188,6 +193,7 @@ fn process_rpc_request(
     chain: &Arc<Mutex<Blockchain>>,
     _mode_ref: &Arc<Mutex<PoolMode>>,
     shares_ref: &Arc<Mutex<Vec<Share>>>,
+    server_wallet: &Arc<Mutex<Wallet>>, // Added
     session_miner_addr: &Arc<Mutex<String>>,
     current_block_template: &Arc<Mutex<Option<crate::block::Block>>>,
     is_authorized: &Arc<Mutex<bool>>,
@@ -232,9 +238,11 @@ fn process_rpc_request(
                         let height_push = format!("0c{}", hex::encode(height_bytes));
                         let coinb1 = format!("010000000100000000000000000000000000000000000000000000000000000000ffffffff0d{}", height_push);
                         
-                        // Dynamic P2PKH Script
-                        let miner_addr_hex = session_miner_addr.lock().unwrap().clone();
-                        let pub_key_bytes = hex::decode(&miner_addr_hex).unwrap_or(vec![0;33]);
+                        
+                        // Dynamic P2PKH Script (Server Wallet for Pool Mining)
+                        let pool_addr_hex = server_wallet.lock().unwrap().get_address();
+                        let pub_key_bytes = hex::decode(&pool_addr_hex).unwrap_or(vec![0;33]);
+
                         
                         use sha2::Digest;
                         use ripemd::Ripemd160;
@@ -279,9 +287,72 @@ fn process_rpc_request(
                             let mut chain_lock = chain.lock().unwrap();
                             if chain_lock.submit_block(block.clone()) {
                                 chain_lock.save();
-                                // Payout Logic (Simplified inline call or just logging)
-                                // Note: Full PPLNS logic omitted for brevity in shared func, 
-                                // but the block is submitted!
+                                // PPLNS Payout Logic
+                                println!("[PPLNS] Block Found! Distributing Rewards...");
+                                let total_reward = 50.0 * 1e8; // 50 VLT
+                                let fee = 0.0; // 0% Fee for now
+                                let distributable = total_reward - fee;
+                                
+                                // Calculate Shares
+                                let mut shares_lock = shares_ref.lock().unwrap();
+                                let total_shares: f64 = shares_lock.iter().map(|s| s.difficulty).sum();
+                                
+                                if total_shares > 0.0 {
+                                    let reward_per_share = distributable / total_shares;
+                                    let mut payouts: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+                                    
+                                    for s in shares_lock.iter() {
+                                        *payouts.entry(s.miner.clone()).or_insert(0.0) += s.difficulty * reward_per_share;
+                                    }
+                                    
+                                    // Create Transactions
+                                    let pool_addr = server_wallet.lock().unwrap().get_address();
+                                    
+                                    // Nonce handling essential to prevent "Same Nonce" error
+                                    // We need to fetch current nonce from chain for pool_addr
+                                    // BUT we are inside chain lock? No, chain is passed as Arc<Mutex> but we unlocked it after submit_block?
+                                    // Wait, chain_lock is held!
+                                    // `chain_lock.submit_block` returns bool. We still hold lock.
+                                    // We can access chain state directly.
+                                    
+                                    let mut current_nonce = chain_lock.state.get_nonce(&pool_addr);
+                                    
+                                    // Also check pending to increment nonce further if we just added some? 
+                                    // No, we are about to add them.
+                                    
+                                    for (miner, amount) in payouts {
+                                        if amount > 1000.0 { // Min payout threshold
+                                             current_nonce += 1;
+                                             let tx = crate::transaction::Transaction::new(
+                                                 pool_addr.clone(),
+                                                 miner.clone(),
+                                                 amount as u64,
+                                                 "VLT".to_string(),
+                                                 current_nonce,
+                                                 0
+                                             );
+                                             
+                                             // Sign with Server Wallet
+                                             let sw = server_wallet.lock().unwrap();
+                                             // We need inner logic to sign. Access private key?
+                                             // Wallet struct fields are pub? Yes.
+                                             if let Some(pk) = &sw.private_key {
+                                                use k256::ecdsa::signature::Signer;
+                                                let signature: k256::ecdsa::Signature = pk.sign(tx.get_signable_bytes().as_slice());
+                                                let mut signed_tx = tx.clone();
+                                                signed_tx.signature = hex::encode(signature.to_bytes());
+                                                
+                                                println!("[PPLNS] Paying {} VLT to {}", amount / 1e8, miner);
+                                                chain_lock.add_pending_transaction(signed_tx);
+                                             }
+                                        }
+                                    }
+                                    
+                                    // Clear Shares after Payout (Window Reset)
+                                    shares_lock.clear();
+                                }
+                                
+                                chain_lock.save();
                                 return Some(serde_json::json!(true));
                             }
                         } else {
@@ -346,7 +417,7 @@ fn handle_client(
     let last_notified_height = Arc::new(Mutex::new(0u64));
 
     // Notifier Thread
-    let (chain_n, miner_n, block_n, auth_n, height_n) = (chain.clone(), session_miner_addr.clone(), current_block_template.clone(), is_authorized.clone(), last_notified_height.clone());
+    let (chain_n, miner_n, block_n, auth_n, height_n, wallet_n) = (chain.clone(), session_miner_addr.clone(), current_block_template.clone(), is_authorized.clone(), last_notified_height.clone(), wallet_ref.clone());
     
     thread::spawn(move || {
         loop {
@@ -385,9 +456,9 @@ fn handle_client(
                 let amt_hex = hex::encode(reward.to_le_bytes());
                 let h_bytes = (next_block.index as u32).to_le_bytes();
                 let h_push = format!("04{}", hex::encode(h_bytes));
-                // Dynamic P2PKH Script Generation
-                let miner_addr_hex = miner_n.lock().unwrap().clone();
-                let pub_key_bytes = hex::decode(&miner_addr_hex).unwrap_or(vec![0;33]); // Default to 0 if invalid
+                // Dynamic P2PKH Script Generation (Use Server Wallet for Pool)
+                let pool_addr_hex = wallet_n.lock().unwrap().get_address();
+                let pub_key_bytes = hex::decode(&pool_addr_hex).unwrap_or(vec![0;33]); // Default to 0 if invalid
                 
                 // HASH160(PubKey) = RIPEMD160(SHA256(PubKey))
                 use sha2::Digest;
@@ -435,7 +506,7 @@ fn handle_client(
         line.clear();
         if reader.read_line(&mut line).unwrap_or(0) == 0 { break; }
         if let Ok(req) = serde_json::from_str::<RpcRequest>(&line) {
-            let res = process_rpc_request(req.clone(), &chain, &mode_ref, &shares_ref, &session_miner_addr, &current_block_template, &is_authorized, &last_notified_height);
+            let res = process_rpc_request(req.clone(), &chain, &mode_ref, &shares_ref, &wallet_ref, &session_miner_addr, &current_block_template, &is_authorized, &last_notified_height);
             
             if let Some(val) = res {
                 let resp = RpcResponse { id: req.id, result: Some(val), error: None };
@@ -454,7 +525,8 @@ fn handle_client_ws(
     mut socket: WebSocket<TcpStream>, 
     chain: Arc<Mutex<Blockchain>>, 
     mode_ref: Arc<Mutex<PoolMode>>,
-    shares_ref: Arc<Mutex<Vec<Share>>>
+    shares_ref: Arc<Mutex<Vec<Share>>>,
+    wallet_ref: Arc<Mutex<Wallet>>
 ) {
     println!("[Stratum WS] Client connected via WebSocket");
     
@@ -497,9 +569,9 @@ fn handle_client_ws(
                 let h_push = format!("0c{}", hex::encode(h_bytes));
                 let cb1 = format!("010000000100000000000000000000000000000000000000000000000000000000ffffffff0d{}", h_push);
                 
-                // Dynamic P2PKH for WS
-                let miner_addr_hex = session_miner_addr.lock().unwrap().clone();
-                let pub_key_bytes = hex::decode(&miner_addr_hex).unwrap_or(vec![0;33]);
+                // Dynamic P2PKH for WS (Server Wallet)
+                let pool_addr_hex = wallet_ref.lock().unwrap().get_address();
+                let pub_key_bytes = hex::decode(&pool_addr_hex).unwrap_or(vec![0;33]);
                 
                 let mut sha = sha2::Sha256::new();
                 sha.update(&pub_key_bytes);
@@ -538,7 +610,7 @@ fn handle_client_ws(
                 if msg.is_text() || msg.is_binary() {
                     let text = msg.to_text().unwrap_or("");
                     if let Ok(req) = serde_json::from_str::<RpcRequest>(text) {
-                        let res = process_rpc_request(req.clone(), &chain, &mode_ref, &shares_ref, &session_miner_addr, &current_block_template, &is_authorized, &last_notified_height);
+                        let res = process_rpc_request(req.clone(), &chain, &mode_ref, &shares_ref, &wallet_ref, &session_miner_addr, &current_block_template, &is_authorized, &last_notified_height);
                         
                         if let Some(val) = res {
                             let resp = RpcResponse { id: req.id, result: Some(val), error: None };
