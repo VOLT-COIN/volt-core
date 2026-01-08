@@ -102,15 +102,10 @@ fn create_mining_notify(
     let nbits = next_block.difficulty; 
     let bits_hex = hex::encode(nbits.to_be_bytes()); // BE Encoded Compact Bits
 
-    // Version (LE) - Stratum usually expects LE for Version? 
-    // Wait, Slushpool sends version as BE Hex.
-    // If we send "01000000". Miner uses 01000000.
-    // Header Version is LE.
-    // If 01000000 is BE value. 01.
-    // Header bytes [01, 00, 00, 00]?
-    // Let's stick to LE for Version for now as logic seems to work for Time/Nonce.
-    // But Bits MUST be BE (like PrevHash).
-    let version_hex = hex::encode(1u32.to_le_bytes());
+    // Version (BE) - Standard Stratum sends Version as BE Hex.
+    // If we send LE, the miner (which expects BE) will reverse it, resulting in swapped bytes in the header.
+    // We send BE so the miner reverses it to LE (correct for Bitcoin Header).
+    let version_hex = hex::encode(1u32.to_be_bytes());
 
     // Time (LE)
     // We fixed parser in Submit to handle LE. So sending LE here is consistent with internal logic.
@@ -527,38 +522,14 @@ fn process_rpc_request(
                         println!("  = Calculated Hash: {}", block.hash);
 
                         // TARGET CHECKS
+                        // TARGET CHECKS
                         // We use simple string prefix checks for MVP optimization.
-                        // Hash string is 64 chars.
-                        // Block Target (Diff 1): 8 Zeros (32 bits). (Approx).
-                        // Share Target (Diff 0.001): 8 - log16(1000) ~= 8 - 2.5 = 5.5 Zeros.
-                        // Let's effectively accept anything with "00000" (5 zeros) as Share.
-                        // And "00000000" (8 zeros) as Block.
-                        
-                        // ADAPTIVE SHARE CHECK
-                        // Miner seems to ignore set_difficulty and mines at Diff ~0 (Target FFFF...).
-                        // Instead of rejecting, we Accept matches with ANY reasonable difficulty.
-                        // We use a safe floor of Diff 0.000001 (Hash must be < 0x00FFFFFF...)
-                        // Practically, just check if it's a valid hash structure.
                         
                         let is_valid_block = block.hash.starts_with("00000000"); // Diff 1
-                        
-                        // Strict Share Target (0.001) -> starts_with("00000")
-                        let meets_target_strict = block.hash.starts_with("00000");
-                        
-                        // Lenient Share Target (Auto-Detect)
-                        // If hash starts with at least "0" (Diff ~0.00001 range), we accept it.
-                        // This eliminates "Rejected Share" for misconfigured miners.
-                        let _meets_target_lenient = block.hash.starts_with("0") || block.hash.chars().next().unwrap().is_digit(10); 
-                        // Actually, just accept it if strict check fails but it looks like a hash?
-                        // No, let's require at least "0" prefix to avoid total junk.
-                        // Wait, user's junk "6d85..." does NOT start with 0.
-                        // If I want to fix "Rejected Share" for "6d85...", I must accept EVERYTHING.
-                        
-                        let is_valid_share = meets_target_strict || true; // FORCE ACCEPT EVERYTHING FOR DEBUG/STABILITY
-                        
-                        // Wait, if I accept "6d85...", what validation value does it have? 
-                        // Effectively 0.
-                        // But I will credit 0.000001 to permit the connection.
+
+                        // SHARE CHECK (Strict Mode)
+                        // Must meet Share Difficulty (0.001) which is "00000" start.
+                        let is_valid_share = block.hash.starts_with("00000"); 
 
                         if is_valid_block {
                              println!("[Pool] BLOCK FOUND! Hash: {}", block.hash);
