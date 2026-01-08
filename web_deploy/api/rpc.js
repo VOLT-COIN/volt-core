@@ -2,7 +2,7 @@
 import axios from 'axios';
 
 // The address of your Home PC Node
-const NODE_URL = 'http://82.201.143.174:7862';
+const NODE_URL = 'https://voltcore-node.hf.space/api/rpc';
 
 export default async function handler(req, res) {
     // CORS Handling
@@ -24,7 +24,7 @@ export default async function handler(req, res) {
     // 2. Check Query Param (?node=...)
     // 3. Fallback to Env Var
     // 4. Fallback to Default
-    let targetNode = process.env.VOLT_NODE_URL || req.headers['x-node-url'] || req.query.node || 'http://82.201.143.174:7862';
+    let targetNode = process.env.VOLT_NODE_URL || req.headers['x-node-url'] || req.query.node || 'https://voltcore-node.hf.space/api/rpc';
 
     try {
         // console.log(`[Vercel Proxy] Forwarding to ${targetNode}`);
