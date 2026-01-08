@@ -269,7 +269,7 @@ fn process_rpc_request(
                              block.merkle_root = crate::block::Block::calculate_merkle_root(&block.transactions);
                         }
 
-                        if let Ok(n) = u32::from_str_radix(nonce_hex, 16) { block.proof_of_work = n; }
+                        if let Ok(n) = u32::from_str_radix(nonce_hex, 16) { block.proof_of_work = n.swap_bytes(); }
                         if let Ok(t) = u32::from_str_radix(ntime_hex, 16) { block.timestamp = t as u64; }
                         block.hash = block.calculate_hash();
 
