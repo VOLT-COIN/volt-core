@@ -75,14 +75,32 @@ fn main() {
 
     // 4. Wallet & Mining
     let miner_wallet = Arc::new(Mutex::new(Wallet::new()));
+    
+    // Auto-Unlock Attempt (for Server Mode)
+    {
+        let mut w = miner_wallet.lock().unwrap();
+        if w.is_locked {
+            // Try default password first
+            if w.unlock("volt_node_auto") {
+                log("[Wallet] Successfully auto-unlocked wallet.", &logs);
+            } else {
+                 // Remaining locked is fine IF we are about to generate one below.
+                 // But if file exists and unlock failed, it's a user issue.
+            }
+        }
+    }
+
     let mut addr_miner = miner_wallet.lock().unwrap().get_address();
     
-    // PREVENTION FIX: Auto-Generate Wallet if Missing AND in Headless Mode (Server)
-    // We do NOT want to do this for Desktop App (GUI) users, as the GUI handles wallet creation.
-    if addr_miner == "LOCKED" && _headless {
-        log("[Setup] Headless Server detected (No Wallet). Generating secure Mining Wallet...", &logs);
+    // CHECK 1: If Missing, Generate New (Server Mode / Headless)
+    // We check if "wallet.enc" and "wallet.key" are missing.
+    let wallet_exists = std::path::Path::new("wallet.enc").exists() || std::path::Path::new("wallet.key").exists();
+    
+    if !wallet_exists {
+        // Safe to generate
+        log("[Setup] No wallet found. Generating secure Mining Wallet...", &logs);
         let (mut w, phrase) = Wallet::create_with_mnemonic();
-        // Save with a default password so it persists. User can change later via API.
+        // Save with a default password so it persists.
         w.save_encrypted("volt_node_auto"); 
         
         log("!!! IMPORTANT: SAVE THIS MNEMONIC !!!", &logs);
@@ -91,6 +109,10 @@ fn main() {
         
         *miner_wallet.lock().unwrap() = w;
         addr_miner = miner_wallet.lock().unwrap().get_address();
+    } else if addr_miner == "LOCKED" {
+        // Exists but locked (Unlock failed)
+        log("!!! WARNING: Wallet exists but is LOCKED. PPLNS Payouts will FAIL. !!!", &logs);
+        log("!!! Ensure 'volt_node_auto' password is valid or unlock manually. !!!", &logs);
     }
 
     // Check for External Address (VLT prefix OR Hex string)
