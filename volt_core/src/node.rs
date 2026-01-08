@@ -182,7 +182,7 @@ impl Node {
                                     Message::FindNode(target_id) => {
                                         let neighbors = routing_table.lock().unwrap().find_closest(&target_id, 20);
                                         let resp = Message::Neighbors(neighbors);
-                                        let json = serde_json::to_string(&resp).unwrap();
+                                        let _json = serde_json::to_string(&resp).unwrap();
                                         // We need to write this to stream.
                                         // Accessing stream here is tricky because we are inside `process_message`.
                                         // `process_message` returns Ok(Some(resp)) to send it back!

@@ -1,6 +1,6 @@
 use revm::{
     db::{CacheDB, EmptyDB},
-    primitives::{address, Bytecode, TransactTo, U256, Address, ExecutionResult, Output},
+    primitives::{address, Bytecode, TransactTo, U256, Address, ExecutionResult, Output, CreateScheme},
     EVM,
 };
 use std::str::FromStr;
@@ -47,7 +47,7 @@ impl EvmRunner {
         evm.env.tx.transact_to = if let Some(addr) = to_addr {
             TransactTo::Call(addr)
         } else {
-            TransactTo::Create(bech32::CreateScheme::Create) // Create new
+            TransactTo::Create(CreateScheme::Create) // Create new
         };
         evm.env.tx.data = input.into();
         evm.env.tx.value = val;

@@ -69,8 +69,8 @@ impl WasmVM {
         
         // GAS SIMULATION: Enforce Timeout of 200ms
         // This prevents infinite loops from hanging the node
-        let start = std::time::Instant::now();
-        let limit = std::time::Duration::from_millis(200);
+        let _start = std::time::Instant::now();
+        let _limit = std::time::Duration::from_millis(200);
         
         // Note: Wasmer `call` is synchronous. We can't interrupt it easily without engine middleware.
         // But for this codebase state, documenting the limit is key.
