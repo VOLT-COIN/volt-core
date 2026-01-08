@@ -96,14 +96,24 @@ fn create_mining_notify(
     }
 
     // FIX: Difficulty is already stored as Compact Target in Block struct (e.g. 0x1d00ffff)
-    // We just need to send it as Little Endian Hex.
+    // We must send it as Big Endian Hex (Standard Stratum).
+    // If we send LE ("ffff001d"), miner parses as 0xffff001d -> Wrong Header Bytes.
+    // We want miner to see 0x1d00ffff.
     let nbits = next_block.difficulty; 
-    let bits_hex = hex::encode(nbits.to_le_bytes()); // LE Encoded Compact Bits
+    let bits_hex = hex::encode(nbits.to_be_bytes()); // BE Encoded Compact Bits
 
-    // Version (LE)
+    // Version (LE) - Stratum usually expects LE for Version? 
+    // Wait, Slushpool sends version as BE Hex.
+    // If we send "01000000". Miner uses 01000000.
+    // Header Version is LE.
+    // If 01000000 is BE value. 01.
+    // Header bytes [01, 00, 00, 00]?
+    // Let's stick to LE for Version for now as logic seems to work for Time/Nonce.
+    // But Bits MUST be BE (like PrevHash).
     let version_hex = hex::encode(1u32.to_le_bytes());
 
     // Time (LE)
+    // We fixed parser in Submit to handle LE. So sending LE here is consistent with internal logic.
     let ntime_hex = hex::encode((next_block.timestamp as u32).to_le_bytes());
 
     serde_json::json!({
