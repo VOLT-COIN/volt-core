@@ -298,7 +298,7 @@ fn process_rpc_request(
                             // A simple sturdy check: Hash must start with "00" (1 byte).
                             // This prevents submitting purely random hashes (1/256 chance vs 1).
                             
-                            if block.hash.starts_with("00") {
+                            if block.hash.starts_with("0") {
                                 {
                                     let mut s_lock = shares_ref.lock().unwrap();
                                     if s_lock.len() > 5000 { s_lock.remove(0); }
