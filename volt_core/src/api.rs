@@ -35,6 +35,12 @@ struct ApiRequest {
     // V2: Token & Staking
     pub hash: Option<String>, // Added for get_transaction
     pub data: Option<serde_json::Value>, // Generic payload for complex objects
+    
+    // Smart Contracts
+    pub bytecode: Option<String>, // Hex encoded wasm
+    pub gas_limit: Option<u64>,
+    pub method: Option<String>,
+    pub args: Option<Vec<String>>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -180,7 +186,9 @@ fn handle_request(
 
     match req.command.as_str() {
         // --- SENSITIVE COMMANDS (Protected) ---
-        "get_address" | "get_mnemonic" | "generate_mnemonic" | "import_mnemonic" | "send_transaction" | "import_wallet" | "encrypt_wallet" | "unlock_wallet" | "lock_wallet" | "stake" | "unstake" | "place_order" | "cancel_order" => {
+    match req.command.as_str() {
+        // --- SENSITIVE COMMANDS (Protected) ---
+        "get_address" | "get_mnemonic" | "generate_mnemonic" | "import_mnemonic" | "send_transaction" | "import_wallet" | "encrypt_wallet" | "unlock_wallet" | "lock_wallet" | "stake" | "unstake" | "place_order" | "cancel_order" | "deploy_contract" | "call_contract" => {
             // 1. Check IP (Localhost is always trusted)
             let is_local = peer_addr.ip().is_loopback(); 
             
@@ -783,6 +791,99 @@ fn handle_request(
              *wallet_lock = Wallet::new();
              
              ApiResponse { status: "success".to_string(), message: "Wallet Locked".to_string(), data: None }
+        },
+
+        "deploy_contract" => {
+             // Params: bytecode (hex), gas_limit
+             if let Some(bytecode_hex) = req.bytecode {
+                 let wallet_lock = wallet.lock().unwrap();
+                 if wallet_lock.is_locked {
+                     return ApiResponse { status: "error".to_string(), message: "WALLET LOCKED".to_string(), data: None };
+                 }
+
+                 let mut chain = blockchain.lock().unwrap();
+                 let sender = wallet_lock.get_address();
+                 
+                 let current_nonce = chain.state.get_nonce(&sender);
+                 let next_nonce = current_nonce + 1;
+                 
+                 // Decode Hex to Vec<u8>
+                 if let Ok(bytecode) = hex::decode(bytecode_hex) {
+                     let mut tx = Transaction::new_deploy_contract(sender, bytecode, next_nonce);
+                     
+                     if let Some(pk) = &wallet_lock.private_key {
+                        tx.sign(pk);
+                     }
+                     
+                     chain.pending_transactions.push(tx);
+                     chain.save(); 
+                     
+                     ApiResponse { status: "success".to_string(), message: "Deploy Contract Tx Sent".to_string(), data: None }
+                 } else {
+                     ApiResponse { status: "error".to_string(), message: "Invalid Bytecode Hex".to_string(), data: None }
+                 }
+             } else {
+                 ApiResponse { status: "error".to_string(), message: "Missing bytecode".to_string(), data: None }
+             }
+        },
+        "call_contract" => {
+             // Params: to (contract addr), method, args (not used in MVP yet), gas_limit
+             if let (Some(contract_addr), Some(method)) = (req.to, req.method) {
+                 let wallet_lock = wallet.lock().unwrap();
+                 if wallet_lock.is_locked {
+                     return ApiResponse { status: "error".to_string(), message: "WALLET LOCKED".to_string(), data: None };
+                 }
+
+                 let mut chain = blockchain.lock().unwrap();
+                 let sender = wallet_lock.get_address();
+                 
+                 let current_nonce = chain.state.get_nonce(&sender);
+                 let next_nonce = current_nonce + 1;
+                 
+                 // For MVP, tx.data holds the method name as bytes
+                 let data = method.into_bytes();
+                 
+                 let mut tx = Transaction::new_call_contract(sender, contract_addr, data, next_nonce);
+                 
+                 if let Some(pk) = &wallet_lock.private_key {
+                    tx.sign(pk);
+                 }
+                 
+                 chain.pending_transactions.push(tx);
+                 chain.save(); 
+                 
+                 ApiResponse { status: "success".to_string(), message: "Call Contract Tx Sent".to_string(), data: None }
+             } else {
+                 ApiResponse { status: "error".to_string(), message: "Missing contract address or method".to_string(), data: None }
+             }
+        },
+        "get_contract" => {
+             // Read-Only
+             if let Some(addr) = req.address {
+                 let chain = blockchain.lock().unwrap();
+                 if let Some(contract) = chain.state.contracts.get(&addr) {
+                      // Return code and storage
+                      // Storage is Map<String, Vec<u8>>, we convert values to hex for JSON safe
+                      let storage_hex: std::collections::HashMap<String, String> = contract.storage.iter()
+                          .map(|(k, v)| (k.clone(), hex::encode(v)))
+                          .collect();
+                      
+                      ApiResponse {
+                          status: "success".to_string(),
+                          message: "Contract Found".to_string(),
+                          data: Some(serde_json::json!({
+                              "address": addr,
+                              "owner": contract.owner,
+                              "bytecode_size": contract.bytecode.len(),
+                              "storage": storage_hex
+                          }))
+                      }
+                 } else {
+                      ApiResponse { status: "error".to_string(), message: "Contract Not Found".to_string(), data: None }
+                 }
+             } else {
+                 ApiResponse { status: "error".to_string(), message: "Missing address".to_string(), data: None }
+             }
         },
 
         "get_block" => {
