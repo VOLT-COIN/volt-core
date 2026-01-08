@@ -291,7 +291,7 @@ fn process_rpc_request(
                                 if s_lock.len() > 5000 { s_lock.remove(0); }
                                 s_lock.push(Share {
                                     miner: session_miner_addr.lock().unwrap().clone(),
-                                    difficulty: block.difficulty as f64,
+                                    difficulty: 0.1,
                                     timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
                                 });
                             }
