@@ -437,14 +437,18 @@ fn process_rpc_request(
                              tx.script_sig = crate::script::Script::new().push(crate::script::OpCode::OpPush(script_data));
                              block.transactions[0] = tx; // Store for valid chain data
                              
-                             // CRITICAL FIX: Manually set Merkle Root to valid Coinbase Hash (Legacy compat)
-                             // Block::calculate_merkle_root uses internal hashing which might differ for Stratum blobs.
-                             // Stratum Miners expect Little Endian (Reversed) Merkle Root in the header.
-                             // Block::calculate_hash uses merkle_root as-is.
-                             // So we must REVERSE it here so calculate_hash produces a header matching the miner's.
-                             let mut params_hash = coinbase_hash.to_vec();
-                             params_hash.reverse();
-                             block.merkle_root = hex::encode(params_hash);
+                             // Calculate Full Merkle Root (Handles >1 transactions correctly)
+                             let root_be_hex = crate::block::Block::calculate_merkle_root(&block.transactions);
+                             
+                             // Stratum Compatibility: Reverse to Little Endian
+                             if let Ok(root_bytes) = hex::decode(&root_be_hex) {
+                                  let mut root_le = root_bytes;
+                                  root_le.reverse();
+                                  block.merkle_root = hex::encode(root_le);
+                             } else {
+                                  // Fallback (should never happen)
+                                  block.merkle_root = root_be_hex;
+                             }
                         }
 
                         if let Ok(n) = u32::from_str_radix(nonce_hex, 16) { block.proof_of_work = n; }
