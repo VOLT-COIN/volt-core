@@ -317,7 +317,7 @@ fn handle_request(
             let mut pool_hashrate = 0.0;
             {
                 let shares_guard = shares.lock().unwrap();
-                let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+                let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or(std::time::Duration::from_secs(0)).as_secs();
                 let window = 60;
                 let mut total_difficulty = 0.0;
                 for s in shares_guard.iter() {
@@ -526,6 +526,9 @@ fn handle_request(
              }
 
             if let (Some(to), Some(amount)) = (req.to, req.amount) {
+                if amount == 0 {
+                     return ApiResponse { status: "error".to_string(), message: "Amount must be positive".to_string(), data: None };
+                }
                 println!("[API] Sending {} VLT to {}", amount, to);
                 // wallet_lock is already held
                 let mut chain = blockchain.lock().unwrap();

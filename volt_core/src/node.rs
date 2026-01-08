@@ -60,6 +60,9 @@ impl Node {
         let banned_ref = self.banned_peers.clone();
         let routing_ref = self.routing_table.clone(); // DHT Ref
         
+        let active_connections = Arc::new(Mutex::new(0usize));
+        let active_connections_ref = active_connections.clone();
+
         thread::spawn(move || {
             // UPnP: Try to open port
             Node::attempt_upnp_mapping(port_ref);
@@ -96,6 +99,10 @@ impl Node {
             for stream in listener.incoming() {
                 match stream {
                     Ok(stream) => { 
+                        // Set strict timeout immediately to prevention Slowloris
+                        let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
+                        let _ = stream.set_write_timeout(Some(Duration::from_secs(10)));
+
                         let chain_inner = chain_ref.clone();
                         let peers_inner = peers_ref.clone();
                         let banned_inner = banned_ref.clone();
@@ -110,12 +117,27 @@ impl Node {
                             continue; // Drop connection
                         }
 
-                        if peers_ref.lock().unwrap().len() >= 50 {
-                             println!("[P2P] Max peers reached (50). Rejecting connection.");
-                             continue;
+                        let active_guard = active_connections_ref.clone();
+                        {
+                            let mut count = active_guard.lock().unwrap();
+                            if *count >= 50 {
+                                println!("[P2P] Max active connections (50) reached. Rejecting.");
+                                continue;
+                            }
+                            *count += 1;
                         }
 
+                        // Move guard into thread to decrement on drop
                         thread::spawn(move || {
+                            // Ensure decrement on exit
+                            struct ConnectionGuard(Arc<Mutex<usize>>);
+                            impl Drop for ConnectionGuard {
+                                fn drop(&mut self) {
+                                    let mut c = self.0.lock().unwrap();
+                                    if *c > 0 { *c -= 1; }
+                                }
+                            }
+                            let _guard = ConnectionGuard(active_guard);
                             // ---------------------------------------------------------
                             // SERVER SIDE: Dual Mode (WebSocket + Raw TCP)
                             // ---------------------------------------------------------
@@ -130,7 +152,7 @@ impl Node {
                                          let peer = crate::kademlia::Peer {
                                              id: node_id,
                                              address: peer_addr_str,
-                                             last_seen: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(),
+                                             last_seen: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or(Duration::from_secs(0)).as_secs(),
                                          };
                                          routing_table.lock().unwrap().add_peer(peer);
                                          Ok(None)
@@ -398,7 +420,7 @@ impl Node {
                         let ws_url = format!("ws://{}", peer_addr);
                         if let Ok((mut socket, _)) = tungstenite::connect(ws_url) {
                             // Handshake: GetPeers
-                            let _ = socket.send(tungstenite::Message::Text(serde_json::to_string(&Message::GetPeers).unwrap()));
+                            let _ = socket.send(tungstenite::Message::Text(serde_json::to_string(&Message::GetPeers).unwrap_or_default()));
                             
                             // CHUNK REQUEST: Ask for next 500 blocks
                             let msg = Message::GetBlocks { start: my_height, limit: 500 };
