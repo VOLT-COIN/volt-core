@@ -94,19 +94,14 @@ fn create_mining_notify(
        if hashes.len() > 1 { branch.push(hex::encode(&hashes[1])); }
     }
 
-    // FIX: Stratum expects Little Endian Hex for header fields
-    // Version = 1 -> "01000000"
-    let version_hex = hex::encode(1u32.to_le_bytes());
-    
-    // Bits (Difficulty) 
-    let bits_hex = hex::encode(next_block.difficulty.to_le_bytes());
-    
-    // Time
-    let ntime_hex = hex::encode((next_block.timestamp as u32).to_le_bytes());
+    // BE Strings (Human Readable / No Reverse)
+    let version_hex = format!("{:08x}", 1); 
+    let bits_hex = format!("{:08x}", next_block.difficulty);
+    let ntime_hex = format!("{:08x}", next_block.timestamp);
 
     serde_json::json!({
         "id": null, "method": "mining.notify",
-        "params": [ job_id, prev_hex, cb1, cb2, branch, version_hex, bits_hex, ntime_hex, true ]
+        "params": [ job_id, next_block.previous_hash, cb1, cb2, branch, version_hex, bits_hex, ntime_hex, true ]
     })
 } 
 
@@ -440,15 +435,8 @@ fn process_rpc_request(
                              // Calculate Full Merkle Root (Handles >1 transactions correctly)
                              let root_be_hex = crate::block::Block::calculate_merkle_root(&block.transactions);
                              
-                             // Stratum Compatibility: Reverse to Little Endian
-                             if let Ok(root_bytes) = hex::decode(&root_be_hex) {
-                                  let mut root_le = root_bytes;
-                                  root_le.reverse();
-                                  block.merkle_root = hex::encode(root_le);
-                             } else {
-                                  // Fallback (should never happen)
-                                  block.merkle_root = root_be_hex;
-                             }
+                             // Stratum Compatibility: Use BE (No Reverse)
+                             block.merkle_root = root_be_hex;
                         }
 
                         if let Ok(n) = u32::from_str_radix(nonce_hex, 16) { block.proof_of_work = n; }

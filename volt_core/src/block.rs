@@ -68,40 +68,35 @@ impl Block {
     }
 
     pub fn calculate_hash(&self) -> String {
-        // Bitcoin Header Format (80 bytes)
+        // Bitcoin Header Format (80 bytes) - Modified for Volt (Big Endian / No Reverse)
         // Version (4) + PrevBlock (32) + MerkleRoot (32) + Timestamp (4) + Bits (4) + Nonce (4)
         
-        let version: u32 = self.version; // Use structural version
+        let version: u32 = self.version; 
         let mut bytes = Vec::new();
         
-        bytes.extend(&version.to_le_bytes()); // 4
+        // Version (BE)
+        bytes.extend(&version.to_be_bytes());
         
-        // PrevHash (32 bytes) - handle genesis "0"
+        // PrevHash (32 bytes) - BE (No Reverse)
         let prev_hash_bytes = if self.previous_hash == "0" {
             vec![0u8; 32]
         } else {
-             hex::decode(&self.previous_hash).unwrap_or(vec![0u8; 32])
+            hex::decode(&self.previous_hash).unwrap_or(vec![0u8; 32])
         };
-        // Use Little Endian (Reverse bytes) for Bitcoin Header Compatibility
-        let mut prev_le = prev_hash_bytes;
-        prev_le.reverse();
-        bytes.extend(&prev_le); 
+        bytes.extend(&prev_hash_bytes); 
         
-        // Merkle Root (32 bytes)
+        // Merkle Root (32 bytes) - BE (No Reverse)
         let merkle_bytes = hex::decode(&self.merkle_root).unwrap_or(vec![0u8; 32]);
-        // Standard Merkle Root (Internal Order - Do NOT Reverse)
-        let merkle_le = merkle_bytes;
-        // merkle_le.reverse(); // FIX: Removed incorrect reversal
-        bytes.extend(&merkle_le); 
+        bytes.extend(&merkle_bytes); 
         
-        // Timestamp (4 bytes)
-        bytes.extend(&(self.timestamp as u32).to_le_bytes());
+        // Timestamp (BE)
+        bytes.extend(&(self.timestamp as u32).to_be_bytes());
         
-        // Bits/Difficulty (4 bytes)
-        bytes.extend(&self.difficulty.to_le_bytes());
+        // Bits/Difficulty (BE)
+        bytes.extend(&self.difficulty.to_be_bytes());
 
-        // Nonce (4 bytes)
-        bytes.extend(&self.proof_of_work.to_le_bytes());
+        // Nonce (BE)
+        bytes.extend(&self.proof_of_work.to_be_bytes());
 
         // DEBUG: Print Header
         // Ensure it is 80 bytes
