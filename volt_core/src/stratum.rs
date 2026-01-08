@@ -612,44 +612,22 @@ fn process_rpc_request(
                         } else if is_valid_share {
                             // Valid Share but not Block
                             println!("[Stratum] Accepted Share from {} (Diff 0.001+)", session_miner_addr.lock().unwrap());
-                            shares_ref.lock().unwrap().push(Share {
+                            
+                            let mut s_lock = shares_ref.lock().unwrap();
+                            if s_lock.len() > 5000 { s_lock.remove(0); } // Prevent Memory Leak
+                            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or(std::time::Duration::from_secs(0)).as_secs();
+                            
+                            s_lock.push(crate::stratum::Share { // Fully qualified just in case
                                 miner: session_miner_addr.lock().unwrap().clone(),
-                                difficulty: 0.001, // Flat diff for now
+                                difficulty: 0.001, 
+                                timestamp: now,
                             });
                             return Some(serde_json::json!(true));
                         } else {
                             println!("[Stratum] Rejected Share from {} - Hash: {}", session_miner_addr.lock().unwrap(), block.hash);
-                        }
-                        } else {
-                            // Valid Share Logic
-                            // SECURITY FIX: Verify Share Weak-PoW (Fake Share Attack)
-                            // Even if it's not a block, it must be hard enough to be a share (diff 0.1 ~ 1/10th of 1)
-                            // 0.1 difficulty roughly means it needs SOME leading zeros or small value.
-                            // For simplicity in this fix, we define Share Target equivalent to "at least 1 zero byte" or small logic.
-                            // But cleaner: Use the `check_pow` we just added to Block or simplistic check locally.
-                            
-                            // Let's reuse Block's check. 
-                            // Diff 1 = 32 bits (4 bytes) zero? No, Diff 1 is arbitrary.
-                            // Let's assume Share Difficulty (0.1) implies at least 20 bits zero (easier than block 24).
-                            // A simple sturdy check: Hash must start with "00" (1 byte).
-                            // This prevents submitting purely random hashes (1/256 chance vs 1).
-                            
-                            if block.hash.starts_with("0") {
-                                {
-                                    let mut s_lock = shares_ref.lock().unwrap();
-                                    if s_lock.len() > 5000 { s_lock.remove(0); }
-                                    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or(Duration::from_secs(0)).as_secs();
-                                    s_lock.push(Share {
-                                        miner: session_miner_addr.lock().unwrap().clone(),
-                                        difficulty: 0.1,
-                                        timestamp: now,
-                                    });
-                                }
-                                return Some(serde_json::json!(true));
-                            } else {
-                                println!("[Stratum] Rejected Share from {} - Hash: {}", session_miner_addr.lock().unwrap(), block.hash);
-                                return Some(serde_json::json!(false));
-                            }
+                            // Return false to let miner know it was rejected? 
+                            // Stratum usually expects a bool result for submit.
+                            return Some(serde_json::json!(false));
                         }
                     }
                 }
