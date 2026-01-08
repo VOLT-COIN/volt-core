@@ -102,13 +102,11 @@ fn create_mining_notify(
     let nbits = next_block.difficulty; 
     let bits_hex = hex::encode(nbits.to_be_bytes()); // BE Encoded Compact Bits
 
-    // Version (BE) - Standard Stratum sends Version as BE Hex.
-    // If we send LE, the miner (which expects BE) will reverse it, resulting in swapped bytes in the header.
-    // We send BE so the miner reverses it to LE (correct for Bitcoin Header).
-    let version_hex = hex::encode(1u32.to_be_bytes());
+    // Version (LE) - Reverted to LE as per user request (Standard Stratum usually BE, but user wants Pre-Flip state).
+    let version_hex = hex::encode(1u32.to_le_bytes());
 
-    // Time (BE) - Standard Stratum sends Time as BE Hex.
-    let ntime_hex = hex::encode((next_block.timestamp as u32).to_be_bytes());
+    // Time (LE) - Reverted to LE.
+    let ntime_hex = hex::encode((next_block.timestamp as u32).to_le_bytes());
 
     serde_json::json!({
         "id": null, "method": "mining.notify",
@@ -454,10 +452,10 @@ fn process_rpc_request(
                              
                              // Update Merkle Root
                              if block.transactions.len() == 1 {
-                                 // Single Tx: Root = Coinbase Hash (BE - Do NOT Reverse for internal calculation)
-                                 let root_be = coinbase_hash_manual.to_vec();
-                                 // root_be.reverse(); // FIX: Do not reverse. Internal Block struct uses BE.
-                                 block.merkle_root = hex::encode(root_be);
+                                 // Single Tx: Root = Coinbase Hash (Reversed for LE)
+                                 let mut root_le = coinbase_hash_manual.to_vec();
+                                 root_le.reverse();
+                                 block.merkle_root = hex::encode(root_le);
                              } else {
                                  // Multi-Tx: Determine if we trust manual hash or struct hash
                                  // Ideally we should trust manual hash for the FIRST element.
@@ -483,23 +481,28 @@ fn process_rpc_request(
                                      hashes = new_hashes;
                                  }
                                  let root_be = hashes[0].clone();
-                                 // let mut root_le = root_be;
-                                 // root_le.reverse(); // FIX: Do not reverse. Internal Block struct uses BE.
-                                 block.merkle_root = hex::encode(root_be);
+                                 let mut root_le = root_be;
+                                 root_le.reverse();
+                                 block.merkle_root = hex::encode(root_le);
                              }
                         }
 
                         // Parse Nonce (Standard Stratum: BE Hex String -> u32 -> LE in Header)
                         if let Ok(n) = u32::from_str_radix(nonce_hex, 16) { block.proof_of_work = n; }
                         
-                        // Parse Time (Standard Stratum: BE Hex String -> u32 -> LE in Header)
-                        // Note: We sent ntime as BE Hex in notify. Miner should return it similarly.
-                        // We parse it as a number (BE), and Block::calculate_hash converts it to LE bytes.
-                        if let Ok(t) = u32::from_str_radix(ntime_hex, 16) { 
-                            block.timestamp = t as u64; 
+                        // Parse Time (Stratum can be messy: If we sent LE, we get LE back)
+                        // Try to parse as LE Bytes first given our notify format
+                        if let Ok(bytes) = hex::decode(ntime_hex) {
+                             if bytes.len() == 4 {
+                                 let mut b = [0u8; 4];
+                                 b.copy_from_slice(&bytes);
+                                 block.timestamp = u32::from_le_bytes(b) as u64;
+                             } else {
+                                 // Fallback
+                                 if let Ok(t) = u32::from_str_radix(ntime_hex, 16) { block.timestamp = t as u64; }
+                             }
                         } else {
-                            // Fallback if hex parsing fails (unlikely)
-                            println!("[Stratum] ERROR: Failed to parse ntime: {}", ntime_hex);
+                             if let Ok(t) = u32::from_str_radix(ntime_hex, 16) { block.timestamp = t as u64; }
                         }
                         
                         // DEBUG: Print Header Details
@@ -671,9 +674,9 @@ fn handle_client(
             if let Some(val) = res {
                 // FIX: Send Explicit Difficulty Notification BEFORE Response
                 if req.method == "mining.subscribe" || req.method == "mining.authorize" {
-                    // Use Difficulty 1 (Standard Integer) to robustly set miner target
+                    // Use Float 0.001 (Original Request) and send as Float
                     let diff_notify = serde_json::json!({
-                        "id": null, "method": "mining.set_difficulty", "params": [1]
+                        "id": null, "method": "mining.set_difficulty", "params": [0.001]
                     });
                     if let Ok(s) = serde_json::to_string(&diff_notify) {
                          let _ = stream_writer_resp.write_all((s + "\n").as_bytes());
@@ -690,7 +693,7 @@ fn handle_client(
                 // Double check: Send AGAIN after response just in case miner ignored the first one
                 if req.method == "mining.subscribe" || req.method == "mining.authorize" {
                      let diff_notify = serde_json::json!({
-                        "id": null, "method": "mining.set_difficulty", "params": [1]
+                        "id": null, "method": "mining.set_difficulty", "params": [0.001]
                     });
                     if let Ok(s) = serde_json::to_string(&diff_notify) {
                          let _ = stream_writer_resp.write_all((s + "\n").as_bytes());
