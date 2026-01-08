@@ -24,7 +24,7 @@ export default async function handler(req, res) {
     // 2. Check Query Param (?node=...)
     // 3. Fallback to Env Var
     // 4. Fallback to Default
-    let targetNode = req.headers['x-node-url'] || req.query.node || process.env.VOLT_NODE_URL || 'http://volt-core.zapto.org:6001';
+    let targetNode = process.env.VOLT_NODE_URL || req.headers['x-node-url'] || req.query.node || 'http://volt-core.zapto.org:6001';
 
     try {
         // console.log(`[Vercel Proxy] Forwarding to ${targetNode}`);
