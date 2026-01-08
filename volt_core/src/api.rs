@@ -223,7 +223,8 @@ fn handle_request(
     match req.command.as_str() {
         "get_status" => {
             let locked = wallet.lock().unwrap().is_locked;
-            let mining = *mining_status.lock().unwrap();
+            // Mining removed
+            let mining = false;
             let initialized = std::path::Path::new("wallet.enc").exists() || std::path::Path::new("wallet.key").exists();
             
             ApiResponse {
@@ -508,17 +509,12 @@ fn handle_request(
             }
         },
         "set_mining" => {
-            if let Some(active) = req.active {
-                let mut status = mining_status.lock().unwrap();
-                *status = active;
-                ApiResponse {
-                    status: "success".to_string(),
-                    message: format!("Mining set to {}", active),
-                    data: None
-                }
-            } else {
-                ApiResponse { status: "error".to_string(), message: "Missing active param".to_string(), data: None }
-            }
+             // Removed
+             ApiResponse {
+                 status: "error".to_string(),
+                 message: "Mining is disabled in this node version".to_string(),
+                 data: None
+             }
         },
 
         "send_transaction" => {

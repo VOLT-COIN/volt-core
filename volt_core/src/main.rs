@@ -33,33 +33,8 @@ fn log(msg: &str, logs: &Arc<Mutex<Vec<String>>>) {
 }
 
 // Internal CPU Miner Thread
-fn start_miner_thread(
-    blockchain: Arc<Mutex<Blockchain>>,
-    wallet: Arc<Mutex<Wallet>>,
-    is_mining: Arc<Mutex<bool>>
-) {
-    thread::spawn(move || {
-        log("Internal Miner Thread Initialized", &Arc::new(Mutex::new(Vec::new()))); 
-        loop {
-            // Check flag
-            let mining_active = *is_mining.lock().unwrap();
-            
-            if mining_active {
-                let mut chain = blockchain.lock().unwrap();
-                let miner_addr = wallet.lock().unwrap().get_address();
-                
-                // Runs for 100k hashes then yields (returns false if not found)
-                // If found, it saves the block inside this call.
-                chain.mine_pending_transactions(miner_addr);
-                
-                drop(chain); // Explicit unlock to let P2P/API access chain
-                thread::sleep(Duration::from_millis(10)); // Yield CPU
-            } else {
-                thread::sleep(Duration::from_secs(1));
-            }
-        }
-    });
-}
+// Miner thread removed
+
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -102,9 +77,10 @@ fn main() {
     let miner_wallet = Arc::new(Mutex::new(Wallet::new()));
     let mut addr_miner = miner_wallet.lock().unwrap().get_address();
     
-    // PREVENTION FIX: Auto-Generate Wallet if Missing
-    if addr_miner == "LOCKED" {
-        log("[Setup] First run detected (No Wallet). Generating secure Mining Wallet...", &logs);
+    // PREVENTION FIX: Auto-Generate Wallet if Missing AND in Headless Mode (Server)
+    // We do NOT want to do this for Desktop App (GUI) users, as the GUI handles wallet creation.
+    if addr_miner == "LOCKED" && _headless {
+        log("[Setup] Headless Server detected (No Wallet). Generating secure Mining Wallet...", &logs);
         let (mut w, phrase) = Wallet::create_with_mnemonic();
         // Save with a default password so it persists. User can change later via API.
         w.save_encrypted("volt_node_auto"); 
@@ -175,10 +151,9 @@ fn main() {
     node.connect_to_peer("wss://voltcore-node.hf.space/p2p".to_string());
 
     // 9. Launch Interface (Console Only for now due to linker issues)
-    log("Running in CONSOLE mode. Type commands (START_MINING, STOP_MINING, SEND...)", &logs);
+    log("Running in CONSOLE mode. Type commands (STATUS, SEND...)", &logs);
     
-    // 4b. Start Internal Miner Thread
-    start_miner_thread(blockchain.clone(), miner_wallet.clone(), is_mining.clone());
+    // Internal Miner Removed
 
     let stdin = std::io::stdin();
     let mut buffer = String::new();
@@ -192,12 +167,10 @@ fn main() {
             Ok(_) => {
             let input = buffer.trim();
             // Simple command handler here (subset of previous)
-            if input == "START_MINING" { *is_mining.lock().unwrap() = true; log("Mining STARTED", &logs); }
-            else if input == "STOP_MINING" { *is_mining.lock().unwrap() = false; log("Mining STOPPED", &logs); }
-            else if input == "STATUS" {
+            if input == "STATUS" {
                 let peers = node.peers.lock().unwrap().len();
                 let height = blockchain.lock().unwrap().get_height();
-                log(&format!("Status: Height={}, Peers={}, Mining={}", height, peers, *is_mining.lock().unwrap()), &logs);
+                log(&format!("Status: Height={}, Peers={}, Mining=DISABLED", height, peers), &logs);
             }
             else if input.starts_with("ADD_NODE ") {
                 let peer = input.replace("ADD_NODE ", "");
@@ -217,7 +190,7 @@ fn main() {
         }
     }
 }
-    
+}    
 
 /* GUI DISABLED - LINKER ISSUES
 if headless {
