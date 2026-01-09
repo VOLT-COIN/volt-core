@@ -405,26 +405,22 @@ fn process_rpc_request(
                 if let Some(block_template) = template_guard.as_ref() {
                     // Passed strict check
                     let mut block = block_template.clone();
-                    
-                    // Reconstruct Block
-
+                                        // Reconstruct Block (Sync with create_mining_notify)
                         let reward_amt = block.transactions[0].amount;
                         let amt_hex = hex::encode(reward_amt.to_le_bytes());
                         let height_bytes = (block.index as u32).to_le_bytes();
-                        // Fix: Use 0c (PUSH 12) matches the script constructed below (Height + Extra1 + Ex2 = 12 bytes)
-                        let height_push = format!("0c{}", hex::encode(height_bytes));
-                        let coinb1 = format!("010000000100000000000000000000000000000000000000000000000000000000ffffffff0d{}", height_push);
+                        let h_push = format!("0c{}", hex::encode(height_bytes)); // PUSH 12 bytes (match notify)
+                        // Exact string from notify
+                        let coinb1 = format!("010000000100000000000000000000000000000000000000000000000000000000ffffffff0d{}", h_push);
                         
-                        
-                        // Dynamic P2PKH Script (Server Wallet for Pool Mining)
+                        // Dynamic P2PKH Script (Server Wallet)
                         let pool_addr_hex = server_wallet.lock().unwrap().get_address();
                         let pub_key_bytes = hex::decode(&pool_addr_hex).unwrap_or(vec![0;33]);
 
+                        use sha2::{Sha256, Digest};
+                        use ripemd::{Ripemd160, Digest as RipeDigest};
                         
-                        use sha2::Digest;
-                        use ripemd::Ripemd160;
-                        
-                        let mut sha = sha2::Sha256::new();
+                        let mut sha = Sha256::new();
                         sha.update(&pub_key_bytes);
                         let sha_hash = sha.finalize();
                         
@@ -434,8 +430,10 @@ fn process_rpc_request(
                         let pub_key_hash_hex = hex::encode(pub_key_hash);
                         
                         let coinb2 = format!("ffffffff01{}1976a914{}88ac00000000", amt_hex, pub_key_hash_hex);
-                        let extra_nonce_1 = extra_nonce_1_ref.lock().unwrap().clone();
+                        let extra_nonce_1 = extra_nonce_1_ref.lock().unwrap().clone(); // Use session En1
                         let coinb = format!("{}{}{}{}", coinb1, extra_nonce_1, ex2, coinb2);
+                        
+                        println!("[Stratum Debug] Reconstructed Coinbase: {}", coinb);
                         
                         if let Ok(coinbase_bytes) = hex::decode(&coinb) {
                              use sha2::{Sha256, Digest};
@@ -467,6 +465,7 @@ fn process_rpc_request(
                                  // Single Tx: Root = Coinbase Hash (Reversed for LE)
                                  let mut root_le = coinbase_hash_manual.to_vec();
                                  root_le.reverse();
+                                 println!("[Stratum Debug] Calculated Merkle Root (LE): {}", hex::encode(&root_le));
                                  block.merkle_root = hex::encode(root_le);
                              } else {
                                  // Multi-Tx: Determine if we trust manual hash or struct hash
