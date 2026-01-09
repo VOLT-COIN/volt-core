@@ -738,7 +738,7 @@ fn process_rpc_request(
                             // Valid Share Accepted
                             let miner_id = session_miner_addr.lock().unwrap().clone();
                             // Do not spam too much if we have many miners, but for local it is fine.
-                            println!("[Stratum] Share Accepted: Miner={} Diff=0.2", miner_id);
+                            println!("[Stratum] Share Accepted: Miner={} Diff=0.1", miner_id);
 
                             
                             let mut s_lock = shares_ref.lock().unwrap();
@@ -747,7 +747,7 @@ fn process_rpc_request(
                             
                             s_lock.push(crate::stratum::Share { // Fully qualified just in case
                                 miner: session_miner_addr.lock().unwrap().clone(),
-                                difficulty: 0.2, // Credit for Diff 0.2 Share
+                                difficulty: 0.1, // Credit for Diff 0.1 Share
                                 timestamp: now,
                             });
                             return Some(serde_json::json!(true));
@@ -867,7 +867,7 @@ fn handle_client(
                 // Double check: Send AGAIN after response just in case miner ignored the first one
                 if req.method == "mining.subscribe" || req.method == "mining.authorize" {
                      let diff_notify = serde_json::json!({
-                        "id": null, "method": "mining.set_difficulty", "params": [0.2]
+                        "id": null, "method": "mining.set_difficulty", "params": [0.1]
                     });
                     if let Ok(s) = serde_json::to_string(&diff_notify) {
                          let _ = stream_writer_resp.write_all((s + "\n").as_bytes());
