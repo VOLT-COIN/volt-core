@@ -652,7 +652,7 @@ fn process_rpc_request(
                         } else {
                              // Easier (e.g. 0x1f, 0x20)
                              if exp >= 0x20 { 0 } else { 
-                                 32.saturating_sub((exp - 0x1d) * 8)
+                                 32u32.saturating_sub((exp - 0x1d) * 8)
                              }
                         };
                         
