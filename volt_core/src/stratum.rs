@@ -618,8 +618,10 @@ fn process_rpc_request(
 
 
                         // SHARE CHECK (Strict Mode)
-                        // Must meet Share Difficulty (0.0001) which is "0000" start.
-                        let is_valid_share = block.hash.starts_with("0000"); 
+                        // Difficulty 0.0001 requires ~19 leading zero bits.
+                        // starts_with("0000") only checked 16 bits (0.000015).
+                        // We must enforce the actual target to avoid paying for weak shares.
+                        let is_valid_share = crate::block::Block::check_pow(&block.hash, 19); 
 
                         if is_valid_block {
                              println!("[Pool] BLOCK FOUND! Hash: {}", block.hash);
