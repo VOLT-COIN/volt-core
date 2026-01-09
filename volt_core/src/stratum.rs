@@ -768,6 +768,9 @@ fn handle_client(
     let random_u32: u32 = rng.gen();
     let extra_nonce_1_val = format!("{:08x}", random_u32);
     let extra_nonce_1 = Arc::new(Mutex::new(extra_nonce_1_val)); // Session State 
+    
+    // FIX: Add duplicate share tracker
+    let mut submitted_nonces = HashSet::new();
 
     // Notifier Thread
     let (block_n, prev_block_n, auth_n, last_job_n, prev_job_n, job_src_n) = (
