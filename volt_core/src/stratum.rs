@@ -865,7 +865,7 @@ fn handle_client(
                 // Double check: Send AGAIN after response just in case miner ignored the first one
                 if req.method == "mining.subscribe" || req.method == "mining.authorize" {
                      let diff_notify = serde_json::json!({
-                        "id": null, "method": "mining.set_difficulty", "params": [0.0001]
+                        "id": null, "method": "mining.set_difficulty", "params": [0.5]
                     });
                     if let Ok(s) = serde_json::to_string(&diff_notify) {
                          let _ = stream_writer_resp.write_all((s + "\n").as_bytes());
