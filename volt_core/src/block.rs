@@ -87,24 +87,20 @@ impl Block {
         bytes.extend(&1u32.to_le_bytes());
 
         // Previous Hash (32 bytes)
-        let prev_hash_bytes = if self.previous_hash == "0" {
+        let mut prev_hash_bytes = if self.previous_hash == "0" {
              vec![0u8; 32]
         } else {
              hex::decode(&self.previous_hash).unwrap_or(vec![0u8; 32])
         };
-        // Use Little Endian (Reverse bytes) for Bitcoin Header Compatibility
-        // REMOVED REVERSAL per user request "without reversing anything"
-        let prev_le = prev_hash_bytes;
-        // prev_le.reverse();
-        bytes.extend(&prev_le); 
+        // FIX: Reverse to Little Endian (Standard Header Format)
+        // Miners expect to hash the LE version. We store BE string.
+        prev_hash_bytes.reverse();
+        bytes.extend(&prev_hash_bytes); 
         
         // Merkle Root (32 bytes)
-        let merkle_bytes = hex::decode(&self.merkle_root).unwrap_or(vec![0u8; 32]);
-        // Standard Merkle Root (Internal Order - Do NOT Reverse)
-        // Stratum miners provide reversed root, so we expect merkle_root to be reversed externally if needed?
-        // No, calculate_hash should expect standard internal root. 
-        // BUT for Stratum compatibility we handle usage in stratum.rs
-        // This function takes "merkle_root" string.
+        let mut merkle_bytes = hex::decode(&self.merkle_root).unwrap_or(vec![0u8; 32]);
+        // FIX: Reverse to Little Endian
+        merkle_bytes.reverse();
         bytes.extend(&merkle_bytes); 
         
         // Timestamp (4 bytes)
