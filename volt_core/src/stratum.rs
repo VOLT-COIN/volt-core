@@ -482,7 +482,7 @@ fn process_rpc_request(
 
                         // Update to match new Standard: PUSH4(Height) + PUSH8(Nonces)
                         // Length 14 (0e). h_push uses 04. PUSH8 opcode (08) acts as separator.
-                        let coinb1 = format!("010000000100000000000000000000000000000000000000000000000000000000ffffffff0e04{}08", hex::encode(height_bytes));
+                        let coinb1 = format!("01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0e04{}08", hex::encode(height_bytes));
                         
                         // Dynamic P2PKH Script (Use ADDRESS FROM BLOCK, not Wallet State)
                         // This ensures that if the wallet changed, we still validate old shares correctly.
