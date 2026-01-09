@@ -4,6 +4,7 @@ use k256::ecdsa::{SigningKey, VerifyingKey, Signature, signature::Signer};
 use k256::ecdsa::signature::Verifier;
 use k256::elliptic_curve::scalar::IsHigh; // Trait required for is_high() check
 use crate::script::Script;
+use hex;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum TxType {
@@ -464,7 +465,10 @@ impl Transaction {
                      // 2. Hash160 (Sha256 + Ripemd160)
                      // 3. Build Standard P2PKH Script
                      
-                     let pub_key_bytes = hex::decode(&self.receiver).unwrap_or(vec![]);
+                     // 1. Decode Receiver (Pub Key Hex)
+                     // MATCH STRATUM: If decode fails, use 33 bytes of zeros (Comp/Uncomp key length placeholder).
+                     // Stratum uses: .unwrap_or(vec![0;33])
+                     let pub_key_bytes = hex::decode(&self.receiver).unwrap_or(vec![0;33]);
                      use sha2::{Sha256, Digest};
                      let sha_h = Sha256::digest(&pub_key_bytes);
                      use ripemd::Ripemd160;
