@@ -777,7 +777,7 @@ fn handle_client_ws(
                 if msg.is_text() || msg.is_binary() {
                     let text = msg.to_text().unwrap_or("");
                     if let Ok(req) = serde_json::from_str::<RpcRequest>(text) {
-                        let res = process_rpc_request(req.clone(), &chain, &mode_ref, &shares_ref, &wallet_ref, &session_miner_addr, &current_block_template, &is_authorized, &last_notified_height, &extra_nonce_1);
+                        let res = process_rpc_request(req.clone(), &chain, &mode_ref, &shares_ref, &wallet_ref, &session_miner_addr, &current_block_template, &is_authorized, &last_notified_height, &extra_nonce_1, &last_job_id);
                         
                         if let Some(val) = res {
                             let resp = RpcResponse { id: req.id, result: Some(val), error: None };
@@ -787,7 +787,7 @@ fn handle_client_ws(
                             // FIX: Send Explicit Difficulty Notification after Subscribe
                             if req.method == "mining.subscribe" {
                                 let diff_notify = serde_json::json!({
-                                    "id": null, "method": "mining.set_difficulty", "params": [1.0]
+                                    "id": null, "method": "mining.set_difficulty", "params": [1]
                                 });
                                 if let Ok(s) = serde_json::to_string(&diff_notify) {
                                      let _ = socket.send(Message::Text(s));
