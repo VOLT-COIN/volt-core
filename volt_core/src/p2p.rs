@@ -105,7 +105,8 @@ impl P2P {
                                             },
                                             _ => {
                                                 // Forward Block/Tx to Internal Channel (Main Node logic handles logic)
-                                                // For now just log
+                                                // println!("[P2P] Forwarding Inbound Message to System...");
+                                                let _ = tx.send(msg);
                                             }
                                         }
                                     }
