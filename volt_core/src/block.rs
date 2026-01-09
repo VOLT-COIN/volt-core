@@ -83,8 +83,9 @@ impl Block {
              hex::decode(&self.previous_hash).unwrap_or(vec![0u8; 32])
         };
         // Use Little Endian (Reverse bytes) for Bitcoin Header Compatibility
-        let mut prev_le = prev_hash_bytes;
-        prev_le.reverse();
+        // REMOVED REVERSAL per user request "without reversing anything"
+        let prev_le = prev_hash_bytes;
+        // prev_le.reverse();
         bytes.extend(&prev_le); 
         
         // Merkle Root (32 bytes)
@@ -107,11 +108,8 @@ impl Block {
 
         // DEBUG: Print Header
         // Ensure it is 80 bytes
-        if bytes.len() == 80 {
-            println!("[Stratum Debug] Hashing Header (80 bytes): {}", hex::encode(&bytes));
-        } else {
-            println!("[Stratum Debug] CRITICAL ERROR: Header length is {} (Expected 80)", bytes.len());
-        }
+        // if bytes.len() == 80 { ... } else { ... }
+
 
         // Hybrid Consensus: Validator Stake (Excluded from PoW Hash to maintain 80-byte Standard Header)
         // bytes.extend(&self.validator_stake.to_le_bytes()); 

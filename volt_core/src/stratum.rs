@@ -411,8 +411,8 @@ fn process_rpc_request(
                         let height_bytes = (block.index as u32).to_le_bytes();
                         
                         // Debug Ex2
-                        println!("[Stratum Debug] Miner Sent Ex2: {} (Len: {})", ex2, ex2.len());
-                        use std::io::Write; std::io::stdout().flush().ok();
+                        // println!("[Stratum Debug] ... "); 
+
 
                         // Dynamic Script Length Calculation
                         // ScriptSig = PUSH(Height) + Height + PUSH(ExtraNonce) + En1 + Ex2
@@ -465,7 +465,8 @@ fn process_rpc_request(
                         let extra_nonce_1 = extra_nonce_1_ref.lock().unwrap().clone(); // Use session En1
                         let coinb = format!("{}{}{}{}", coinb1, extra_nonce_1, ex2, coinb2);
                         
-                        println!("[Stratum Debug] Reconstructed Coinbase: {}", coinb);
+                        // println!("[Stratum Debug] Reconstructed Coinbase: {}", coinb);
+
                         
                         if let Ok(coinbase_bytes) = hex::decode(&coinb) {
                              use sha2::{Sha256, Digest};
@@ -497,7 +498,7 @@ fn process_rpc_request(
                                  // Single Tx: Root = Coinbase Hash (Reversed for LE)
                                  let mut root_le = coinbase_hash_manual.to_vec();
                                  root_le.reverse();
-                                 println!("[Stratum Debug] Calculated Merkle Root (LE): {}", hex::encode(&root_le));
+                                 // println!("[Stratum Debug] Calculated Merkle Root (LE): {}", hex::encode(&root_le));
                                  block.merkle_root = hex::encode(root_le);
                              } else {
                                  // Multi-Tx: Determine if we trust manual hash or struct hash
@@ -540,21 +541,12 @@ fn process_rpc_request(
                             block.timestamp = t as u64; 
                         } else {
                             // Fallback if hex parsing fails (unlikely)
+                        // Fallback if hex parsing fails (unlikely)
                             println!("[Stratum] ERROR: Failed to parse ntime: {}", ntime_hex);
                         }
                         
-                        // DEBUG: Print Header Details
-                        println!("[Stratum Debug] Header Construction:");
-                        println!("  - Version: {:08x} (LE Bytes: {:?})", block.version, block.version.to_le_bytes());
-                        println!("  - PrevHash: {}", block.previous_hash);
-                        println!("  - Merkle: {}", block.merkle_root);
-                        println!("  - Time: {} (Hex: {}) -> Bytes: {:?}", block.timestamp, ntime_hex, block.timestamp.to_le_bytes());
-                        println!("  - Bits: {:08x} (LE: {:?})", block.difficulty, block.difficulty.to_le_bytes());
-                        println!("  - Nonce: {:08x} (Hex: {})", block.proof_of_work, nonce_hex);
-                        
                         block.hash = block.calculate_hash();
-                        block.hash = block.calculate_hash();
-                        println!("  = Calculated Hash: {}", block.hash);
+
 
                         // TARGET CHECKS
                         // TARGET CHECKS
@@ -613,7 +605,8 @@ fn process_rpc_request(
                              }
                         } else if is_valid_share {
                             // Valid Share
-                            println!("[Stratum] Share Accepted from {} (Diff 0.001+ / Target Matches)", session_miner_addr.lock().unwrap());
+                            // println!("[Stratum] Share Accepted ...");
+
                             
                             let mut s_lock = shares_ref.lock().unwrap();
                             if s_lock.len() > 5000 { s_lock.remove(0); } // Prevent Memory Leak
@@ -626,7 +619,8 @@ fn process_rpc_request(
                             });
                             return Some(serde_json::json!(true));
                         } else {
-                            println!("[Stratum] Rejected Share from {} - Hash: {} (Target: 00000...)", session_miner_addr.lock().unwrap(), block.hash);
+                            // println!("[Stratum] Rejected Share ...");
+
                             // Return false to let miner know it was rejected? 
                             // Stratum usually expects a bool result for submit.
                             return Some(serde_json::json!(false));
