@@ -120,6 +120,8 @@ impl VirtualMachine {
                 },
                 OpCode::OpCheckLockTimeVerify => {
                     if let Some(item) = self.stack.last() {
+                         // FIX: Prevent Panic if item is too short
+                         if item.len() < 8 { return false; }
                          // Parse item as u64 timestamp
                          let lock_time = u64::from_be_bytes(item[0..8].try_into().unwrap_or([0;8]));
                          if context.timestamp < lock_time { return false; } // Lock is still active
