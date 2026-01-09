@@ -361,14 +361,16 @@ fn process_rpc_request(
     current_block_template: &Arc<Mutex<Option<crate::block::Block>>>,
     is_authorized: &Arc<Mutex<bool>>,
     last_notified_height: &Arc<Mutex<u64>>,
-    extra_nonce_1_ref: &Arc<Mutex<String>> // Added
+    extra_nonce_1_ref: &Arc<Mutex<String>>,
+    last_job_id_ref: &Arc<Mutex<String>> // Passed strict job id
 ) -> Option<serde_json::Value> {
     
     match req.method.as_str() {
         "mining.subscribe" => {
             let en1 = extra_nonce_1_ref.lock().unwrap().clone();
+            // Send Diff 1 immediately
             Some(serde_json::json!([
-                [ ["mining.set_difficulty", "0.1"], ["mining.notify", "1"] ],
+                [ ["mining.set_difficulty", "1"], ["mining.notify", "1"] ],
                 en1, 4
             ]))
         },
@@ -390,12 +392,20 @@ fn process_rpc_request(
                 req.params.get(3).and_then(|v|v.as_str()),
                 req.params.get(4).and_then(|v|v.as_str())
             ) {
+                // Strict Job ID Check to prevent stale shares processing against new template
+                let current_job = last_job_id_ref.lock().unwrap().clone();
+                if jid != current_job {
+                    println!("[Stratum] Stale Share Rejected (Job ID Mismatch: {} != {})", jid, current_job);
+                    return Some(serde_json::json!(false));
+                }
+
                 let template_guard = current_block_template.lock().unwrap();
                 if let Some(block_template) = template_guard.as_ref() {
-                    if jid.starts_with(&block_template.index.to_string()) {
-                        let mut block = block_template.clone();
-                        
-                        // Reconstruct Block
+                    // Passed strict check
+                    let mut block = block_template.clone();
+                    
+                    // Reconstruct Block
+
                         let reward_amt = block.transactions[0].amount;
                         let amt_hex = hex::encode(reward_amt.to_le_bytes());
                         let height_bytes = (block.index as u32).to_le_bytes();
@@ -669,14 +679,14 @@ fn handle_client(
         line.clear();
         if reader.read_line(&mut line).unwrap_or(0) == 0 { break; }
         if let Ok(req) = serde_json::from_str::<RpcRequest>(&line) {
-            let res = process_rpc_request(req.clone(), &chain, &mode_ref, &shares_ref, &wallet_ref, &session_miner_addr, &current_block_template, &is_authorized, &last_notified_height, &extra_nonce_1);
+            let res = process_rpc_request(req.clone(), &chain, &mode_ref, &shares_ref, &wallet_ref, &session_miner_addr, &current_block_template, &is_authorized, &last_notified_height, &extra_nonce_1, &last_job_id);
             
             if let Some(val) = res {
                 // FIX: Send Explicit Difficulty Notification BEFORE Response
                 if req.method == "mining.subscribe" || req.method == "mining.authorize" {
-                    // Use Float 0.001 (Original Request) and send as Float
+                    // Use Difficulty 1 (Standard Integer)
                     let diff_notify = serde_json::json!({
-                        "id": null, "method": "mining.set_difficulty", "params": [0.001]
+                        "id": null, "method": "mining.set_difficulty", "params": [1]
                     });
                     if let Ok(s) = serde_json::to_string(&diff_notify) {
                          let _ = stream_writer_resp.write_all((s + "\n").as_bytes());
@@ -693,7 +703,7 @@ fn handle_client(
                 // Double check: Send AGAIN after response just in case miner ignored the first one
                 if req.method == "mining.subscribe" || req.method == "mining.authorize" {
                      let diff_notify = serde_json::json!({
-                        "id": null, "method": "mining.set_difficulty", "params": [0.001]
+                        "id": null, "method": "mining.set_difficulty", "params": [1]
                     });
                     if let Ok(s) = serde_json::to_string(&diff_notify) {
                          let _ = stream_writer_resp.write_all((s + "\n").as_bytes());
