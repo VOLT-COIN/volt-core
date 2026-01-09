@@ -190,7 +190,7 @@ impl StratumServer {
                     {
                         let state = job_state.lock().unwrap();
                         let last_h = state.block_template.as_ref().map(|b| b.index).unwrap_or(0);
-                        if h != last_h || now % 10 == 0 { // Update every 10s or new block
+                        if h != last_h || now % 60 == 0 { // Update every 60s or new block (Reduce Stale Shares)
                             update_needed = true;
                         }
                     }
