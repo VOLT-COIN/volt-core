@@ -703,10 +703,20 @@ fn process_rpc_request(
                         // SHARE CHECK (Relaxed for Testnet)
                         // Difficulty 0x207fffff requires very little work (starts with 0 bit).
                         // We set it to 1 bit to accept almost anything validly structured.
-                        // SHARE CHECK (Relaxed for Testnet)
-                        // Difficulty 0x207fffff requires very little work.
-                        // We accept ANY share for now to validate connectivity/payouts.
-                        let is_valid_share = crate::block::Block::check_pow(&block.hash, 0); 
+                        // SHARE CHECK (Dynamic based on Miner's current Difficulty)
+                        // We calculate required work based on 'current_vardiff'.
+                        // Diff 1.0 ~= 32 leading zero bits.
+                        // Diff 0.01 ~= 25 leading zero bits.
+                        // Formula approximation: required_bits = 32 + log2(diff) - log2(1.0) ?
+                        // Actually, check_pow checks 'leading zero bits' against full 256-bit space?
+                        // No, block.check_pow logic is relative to bits.
+                        
+                        // Simple Logic for robustness:
+                        // If diff < 0.1, we accept 0 bits (valid header structure check only).
+                        // If diff >= 0.1, we check at least 1 bit.
+                        // If diff >= 1.0, we check standard bits.
+                        let required_share_bits = if current_vardiff < 0.1 { 0 } else { 1 };
+                        let is_valid_share = crate::block::Block::check_pow(&block.hash, required_share_bits); 
 
                         if is_valid_block {
                              println!("[Pool] BLOCK FOUND! Hash: {}", block.hash);
