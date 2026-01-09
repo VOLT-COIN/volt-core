@@ -364,7 +364,9 @@ fn process_rpc_request(
     is_authorized: &Arc<Mutex<bool>>,
     last_notified_height: &Arc<Mutex<u64>>,
     extra_nonce_1_ref: &Arc<Mutex<String>>,
-    last_job_id_ref: &Arc<Mutex<String>> // Passed strict job id
+    last_job_id_ref: &Arc<Mutex<String>>, // Passed strict job id
+    prev_job_id_ref: &Arc<Mutex<String>>, // Added: Previous Job ID
+    prev_block_template_ref: &Arc<Mutex<Option<crate::block::Block>>> // Added: Previous Template
 ) -> Option<serde_json::Value> {
     
     match req.method.as_str() {
@@ -394,16 +396,28 @@ fn process_rpc_request(
                 req.params.get(3).and_then(|v|v.as_str()),
                 req.params.get(4).and_then(|v|v.as_str())
             ) {
-                // Strict Job ID Check to prevent stale shares processing against new template
+                // Strict Job ID Check with 1-Deep History Buffer
                 let current_job = last_job_id_ref.lock().unwrap().clone();
-                if jid != current_job {
-                    println!("[Stratum] Stale Share Rejected (Job ID Mismatch: {} != {})", jid, current_job);
+                let prev_job = prev_job_id_ref.lock().unwrap().clone();
+                
+                let mut target_template: Option<crate::block::Block> = None;
+                let mut is_stale = false;
+
+                if jid == current_job {
+                     // Current Job
+                     target_template = current_block_template.lock().unwrap().clone();
+                } else if jid == prev_job && !prev_job.is_empty() {
+                     // Previous Job (Latency/Stale) - Valid for Payouts, Invalid for Block
+                     target_template = prev_block_template_ref.lock().unwrap().clone();
+                     is_stale = true;
+                     // println!("[Stratum] Processing Stale Share for Job: {}", jid);
+                } else {
+                    println!("[Stratum] Rejected Share (Unknown Job: {} | Curr: {})", jid, current_job);
                     return Some(serde_json::json!(false));
                 }
 
-                let template_guard = current_block_template.lock().unwrap();
-                if let Some(block_template) = template_guard.as_ref() {
-                    // Passed strict check
+                if let Some(block_template) = target_template {
+                    // Reconstruct Block
                     let mut block = block_template.clone();
                                         // Reconstruct Block (Sync with create_mining_notify)
                         let reward_amt = block.transactions[0].amount;
@@ -561,7 +575,11 @@ fn process_rpc_request(
                         if is_valid_block {
                              println!("[Pool] BLOCK FOUND! Hash: {}", block.hash);
                              let mut chain_lock = chain.lock().unwrap();
-                             if chain_lock.submit_block(block.clone()) {
+                             
+                             if is_stale {
+                                 // Do NOT submit stale block to chain (it will fail anyway).
+                                 // But we count it as a share below.
+                             } else if chain_lock.submit_block(block.clone()) {
                                  chain_lock.save();
                                  println!("[PPLNS] Block Found! Distributing Rewards...");
                                  // ... Payouts ...
@@ -576,8 +594,25 @@ fn process_rpc_request(
                                      for s in shares_lock.iter() {
                                          *payouts.entry(s.miner.clone()).or_insert(0.0) += s.difficulty * reward_per_share;
                                      }
-                                     let pool_addr = server_wallet.lock().unwrap().get_address();
-                                     let mut current_nonce = chain_lock.state.get_nonce(&pool_addr);
+                                     for (miner, amount) in payouts {
+                                         // If stale, we might reduce reward? For PPLNS, usually full credit.
+                                         // But WE CANNOT SUBMIT STALE BLOCK TO CHAIN.
+                                         if is_stale { continue; } // Don't submit txs if we are not submitting block?
+                                         // Wait. This block looks valid PoW.
+                                         // If is_stale is true, it means this block is built on OLD previous hash (likely).
+                                         // So chain.submit_block() will reject it as "Hash mismatch" or "Not tip".
+                                         // So "submit_block" check handles the "Stale Block" logic correctly.
+                                         // We only need to worry about Payouts?
+                                         // Actually, if submit_block fails, we don't pay.
+                                         // So if IS_STALE, we shouldn't even try to submit block, 
+                                         // BUT we should accept the SHARE (0.0001 diff) for future payouts.
+                                     } 
+                                     if is_stale {
+                                          println!("[Stratum] Stale Block - Valid PoW but old parent. Submitting as Share only.");
+                                     } else {
+                                          // Logic continues...
+                                          let pool_addr = server_wallet.lock().unwrap().get_address();
+                                          let mut current_nonce = chain_lock.state.get_nonce(&pool_addr);
                                      for (miner, amount) in payouts {
                                          let amount_u64 = amount as u64;
                                          let base_fee = 100_000;
@@ -603,7 +638,8 @@ fn process_rpc_request(
                                  chain_lock.save();
                                  return Some(serde_json::json!(true));
                              }
-                        } else if is_valid_share {
+                             // If stale, we fall through to Share Accepted
+                         } else if is_valid_share {
                             // Valid Share
                             // println!("[Stratum] Share Accepted ...");
 
@@ -654,8 +690,10 @@ fn handle_client(
 
     let session_miner_addr = Arc::new(Mutex::new("SYSTEM_POOL".to_string()));
     let current_block_template = Arc::new(Mutex::new(None::<crate::block::Block>));
+    let prev_block_template = Arc::new(Mutex::new(None::<crate::block::Block>)); // Added
     let is_authorized = Arc::new(Mutex::new(false));
     let last_job_id = Arc::new(Mutex::new("".to_string()));
+    let prev_job_id = Arc::new(Mutex::new("".to_string())); // Added
     let last_notified_height = Arc::new(Mutex::new(0u64)); 
     
     // Generate Unique ExtraNonce1 (Random 4 bytes hex)
@@ -666,7 +704,10 @@ fn handle_client(
     let extra_nonce_1 = Arc::new(Mutex::new(extra_nonce_1_val)); // Session State 
 
     // Notifier Thread
-    let (block_n, auth_n, last_job_n, job_src_n) = (current_block_template.clone(), is_authorized.clone(), last_job_id.clone(), job_source.clone());
+    let (block_n, prev_block_n, auth_n, last_job_n, prev_job_n, job_src_n) = (
+        current_block_template.clone(), prev_block_template.clone(), is_authorized.clone(), last_job_id.clone(), prev_job_id.clone(), job_source.clone()
+    );
+     
     
     thread::spawn(move || {
         loop {
@@ -684,6 +725,13 @@ fn handle_client(
             };
 
             if let Some(notify) = new_notify {
+                // Shift History
+                let last = last_job_n.lock().unwrap().clone();
+                if !last.is_empty() {
+                    *prev_job_n.lock().unwrap() = last;
+                    *prev_block_n.lock().unwrap() = block_n.lock().unwrap().clone();
+                }
+
                 *block_n.lock().unwrap() = new_block;
                 *last_job_n.lock().unwrap() = new_id;
                 
@@ -701,7 +749,8 @@ fn handle_client(
         line.clear();
         if reader.read_line(&mut line).unwrap_or(0) == 0 { break; }
         if let Ok(req) = serde_json::from_str::<RpcRequest>(&line) {
-            let res = process_rpc_request(req.clone(), &chain, &mode_ref, &shares_ref, &wallet_ref, &session_miner_addr, &current_block_template, &is_authorized, &last_notified_height, &extra_nonce_1, &last_job_id);
+            let res = process_rpc_request(req.clone(), &chain, &mode_ref, &shares_ref, &wallet_ref, &session_miner_addr, 
+                &current_block_template, &is_authorized, &last_notified_height, &extra_nonce_1, &last_job_id, &prev_job_id, &prev_block_template); // Passed new args
             
             if let Some(val) = res {
                 // FIX: Send Explicit Difficulty Notification BEFORE Response
@@ -776,6 +825,13 @@ fn handle_client_ws(
             };
 
             if let Some(notify) = new_notify {
+                // Shift History
+                let last = last_job_id.lock().unwrap().clone();
+                if !last.is_empty() {
+                    *prev_job_id.lock().unwrap() = last;
+                    *prev_block_template.lock().unwrap() = current_block_template.lock().unwrap().clone();
+                }
+
                 *current_block_template.lock().unwrap() = new_block;
                 *last_job_id.lock().unwrap() = new_id;
                 
@@ -791,7 +847,8 @@ fn handle_client_ws(
                 if msg.is_text() || msg.is_binary() {
                     let text = msg.to_text().unwrap_or("");
                     if let Ok(req) = serde_json::from_str::<RpcRequest>(text) {
-                        let res = process_rpc_request(req.clone(), &chain, &mode_ref, &shares_ref, &wallet_ref, &session_miner_addr, &current_block_template, &is_authorized, &last_notified_height, &extra_nonce_1, &last_job_id);
+                        let res = process_rpc_request(req.clone(), &chain, &mode_ref, &shares_ref, &wallet_ref, &session_miner_addr, 
+                            &current_block_template, &is_authorized, &last_notified_height, &extra_nonce_1, &last_job_id, &prev_job_id, &prev_block_template); // Passed new args
                         
                         if let Some(val) = res {
                             let resp = RpcResponse { id: req.id, result: Some(val), error: None };
