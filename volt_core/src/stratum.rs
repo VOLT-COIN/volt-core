@@ -764,7 +764,33 @@ fn process_rpc_request(
                             });
                             return Some(serde_json::json!(true));
                         } else {
-                             println!("[Stratum] Rejected Share ...");
+                             println!("[Stratum] Rejected Share (Low Difficulty): Block Hash={}", block.hash);
+                             // Check bit count for debug
+                             let hash_bytes = hex::decode(&block.hash).unwrap_or(vec![]);
+                             if !hash_bytes.is_empty() {
+                                 let first_byte = hash_bytes[0]; // Big Endian first byte.
+                                 // If reversed (LE), this would be last byte.
+                                 // calculate_hash returns standard hex.
+                                 // Standard SHA256 output starts with 00? No, random.
+                                 // Bitcoin Block Hash is REVERSE(SHA256(SHA256)).
+                                 // My calculate_hash does NOT reverse.
+                                 // So here, 'block.hash' is Big Endian form of SHA256 output.
+                                 
+                                 // check_pow reverses it.
+                                 // check_pow(hash, 1) -> Reverses hash -> Checks if it < 2^255.
+                                 // (Means Most Significant Bit of LE number is 0).
+                                 // MSB of LE number is... LAST byte of BE array?
+                                 // Yes.
+                                 // hash_bytes[31] must be < 0x80.
+                                 if hash_bytes.len() == 32 {
+                                      println!("[Debug] Rejected Hash Bytes (BE): {:02x}...{:02x}", hash_bytes[0], hash_bytes[31]);
+                                      if hash_bytes[31] >= 0x80 {
+                                          println!("[Debug] Analysis: Hash Last Byte (MSB in LE) is {:02x} (>= 0x80). Fails 1-bit check.", hash_bytes[31]);
+                                      } else {
+                                          println!("[Debug] Analysis: Hash Last Byte is {:02x} (< 0x80). SHOULD PASS? Logic Mismatch?", hash_bytes[31]);
+                                      }
+                                 }
+                             }
 
                             // Return false to let miner know it was rejected? 
                             // Stratum usually expects a bool result for submit.
