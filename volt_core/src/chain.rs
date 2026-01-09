@@ -1462,7 +1462,7 @@ impl Blockchain {
         
         // FORCE TESTNET DIFFICULTY constant
         if true {
-             return 0x207fffff;
+             return 0x1effffff;
         }
 
         if (last_block.index + 1) % retarget_interval != 0 {
