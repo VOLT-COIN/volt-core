@@ -185,7 +185,13 @@ impl Block {
     }
 
     pub fn check_pow(hash_hex: &str, distinct_bits: u32) -> bool {
-        if let Ok(bytes) = hex::decode(hash_hex) {
+        if let Ok(mut bytes) = hex::decode(hash_hex) {
+            // Hash is Little Endian (reversed). 
+            // We want to check Leading Zeros of the Big Endian value.
+            // So we must iterate from the END of the byte array (MSB) to the START (LSB).
+            // Or simpler: Reverse the bytes back to Big Endian first.
+            bytes.reverse();
+
             let mut zeros = 0;
             for &byte in &bytes {
                 if byte == 0 {
