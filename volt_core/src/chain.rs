@@ -627,8 +627,8 @@ impl Blockchain {
             data: vec![],
         };
 
-        // Use Standard Difficulty 0x1d00ffff for Genesis to match chain config
-        let mut genesis_block = Block::new(0, String::from("0"), vec![genesis_msg], 0x1d00ffff, 0);
+        // Use Testnet Minimum Difficulty 0x207fffff for Easy Mining/Testing
+        let mut genesis_block = Block::new(0, String::from("0"), vec![genesis_msg], 0x207fffff, 0);
         
         // Remove Hardcoded overrides -> Return to Dynamic
         // genesis_block.timestamp = 1767077203;

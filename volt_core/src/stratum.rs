@@ -668,10 +668,10 @@ fn process_rpc_request(
                         let is_valid_block = crate::block::Block::check_pow(&block.hash, required_zeros_bits);
 
 
-                        // SHARE CHECK (Strict Mode)
-                        // Difficulty 1 requires ~32 leading zero bits.
-                        // We enforce Diff 1 to match standard miner expectations.
-                        let is_valid_share = crate::block::Block::check_pow(&block.hash, 32); 
+                        // SHARE CHECK (Relaxed for Testnet)
+                        // Difficulty 0x207fffff requires very little work (starts with 0 bit).
+                        // We set it to 1 bit to accept almost anything validly structured.
+                        let is_valid_share = crate::block::Block::check_pow(&block.hash, 1); 
 
                         if is_valid_block {
                              println!("[Pool] BLOCK FOUND! Hash: {}", block.hash);
