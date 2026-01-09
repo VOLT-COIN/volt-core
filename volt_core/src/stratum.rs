@@ -635,6 +635,7 @@ fn process_rpc_request(
                                      }
                                      shares_lock.clear();
                                  }
+                                 } // Close total_shares > 0.0
                                  chain_lock.save();
                                  return Some(serde_json::json!(true));
                              }
