@@ -607,13 +607,16 @@ impl Blockchain {
         // Fair Launch Genesis: No Premine
         // We create a purely symbolic Genesis Block.
         
+        // Dynamic Genesis for new network launch
+        let timestamp = chrono::Utc::now().timestamp() as u64; 
+        
         let genesis_msg = Transaction {
         version: 1,
         sender: String::from("SYSTEM"),
         receiver: String::from("GENESIS"), // Unspendable
         amount: 0, 
         signature: String::from("VolteCore Fair Launch 2026"),
-            timestamp: 1767077203, // MATCH REMOTE TIMESTAMP
+            timestamp, 
             token: String::from("VLT"),
             tx_type: crate::transaction::TxType::Transfer,
             nonce: 0,
@@ -627,19 +630,17 @@ impl Blockchain {
         // Use Standard Difficulty 0x1d00ffff for Genesis to match chain config
         let mut genesis_block = Block::new(0, String::from("0"), vec![genesis_msg], 0x1d00ffff, 0);
         
-        // FIX: Enforce Deterministic Genesis Timestamp and Hash for network compatibility
-        genesis_block.timestamp = 1767077203;
-        genesis_block.proof_of_work = 0; // Deterministic Nonce (Required for consistent Genius Hash)
+        // Remove Hardcoded overrides -> Return to Dynamic
+        // genesis_block.timestamp = 1767077203;
+        // genesis_block.proof_of_work = 0; 
+        // genesis_block.merkle_root = ...
         
-        // FIX: Hardcode Merkle Root to match Remote Network
-        // Remote Merkle: 9ade8308c25fc33e1a6ee8d5981c10eea693691583d8a17acb8207b244fda116
-        genesis_block.merkle_root = "9ade8308c25fc33e1a6ee8d5981c10eea693691583d8a17acb8207b244fda116".to_string();
-        
+        // Recalculate Hash ensuring it matches the dynamic content
         genesis_block.hash = genesis_block.calculate_hash();
         
         // Debug Log
-        println!("[Genesis] Local Genesis Hash: {}", genesis_block.hash);
-        println!("[Genesis] Please update remote checkpoints with this new hash if changed.");
+        println!("[Genesis] Generated Dynamic Genesis Block at {}", timestamp);
+        println!("[Genesis] Hash: {}", genesis_block.hash);
 
 
 
