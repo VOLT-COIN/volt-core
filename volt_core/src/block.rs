@@ -114,7 +114,11 @@ impl Block {
 
         // DEBUG: Print Header
         // Ensure it is 80 bytes
-        // if bytes.len() == 80 { ... } else { ... }
+        if bytes.len() == 80 {
+             // println!("[Block Debug] Hashing Header: {}", hex::encode(&bytes));
+        } else {
+             // println!("[Block Debug] WARNING: Header is {} bytes (Expected 80)", bytes.len());
+        }
 
 
         // Hybrid Consensus: Validator Stake (Excluded from PoW Hash to maintain 80-byte Standard Header)
