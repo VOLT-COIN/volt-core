@@ -666,7 +666,7 @@ fn process_rpc_request(
                         // SHARE CHECK (Relaxed for Testnet)
                         // Difficulty 0x207fffff requires very little work (starts with 0 bit).
                         // We set it to 1 bit to accept almost anything validly structured.
-                        let is_valid_share = true; // crate::block::Block::check_pow(&block.hash, 1); 
+                        let is_valid_share = crate::block::Block::check_pow(&block.hash, 1); 
 
                         if is_valid_block {
                              println!("[Pool] BLOCK FOUND! Hash: {}", block.hash);
