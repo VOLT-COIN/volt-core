@@ -403,6 +403,7 @@ impl Transaction {
              bytes.push(type_byte);
              bytes.extend(&self.nonce.to_le_bytes());
              bytes.extend(&self.fee.to_le_bytes());
+             bytes.extend(&self.price.to_le_bytes()); // CRITICAL FIX: Include Price in Hash (DEX Security)
              bytes.extend(&self.data); // Include data in hash
              
              // Script Pub Key (Ops)
