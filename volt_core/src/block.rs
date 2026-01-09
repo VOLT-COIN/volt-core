@@ -115,9 +115,9 @@ impl Block {
         // DEBUG: Print Header
         // Ensure it is 80 bytes
         if bytes.len() == 80 {
-             // println!("[Block Debug] Hashing Header: {}", hex::encode(&bytes));
+             println!("[Block Debug] Hashing Header: {}", hex::encode(&bytes));
         } else {
-             // println!("[Block Debug] WARNING: Header is {} bytes (Expected 80)", bytes.len());
+             println!("[Block Debug] WARNING: Header is {} bytes (Expected 80)", bytes.len());
         }
 
 

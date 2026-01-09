@@ -602,6 +602,8 @@ fn process_rpc_request(
                         }
                         
                         block.hash = block.calculate_hash();
+                        println!("[Stratum Debug] Reconstructed Block: Time={} Nonce={} Diff={} Merkle={}", 
+                            block.timestamp, block.proof_of_work, block.difficulty, block.merkle_root);
 
 
                         // TARGET CHECKS
