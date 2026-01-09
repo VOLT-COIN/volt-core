@@ -493,9 +493,11 @@ impl Transaction {
                      
                       // Hash it
                       println!("[Tx Debug] Reconstructed Hex: {}", hex::encode(&btc_tx));
+                      println!("[Tx Debug] Bytes Len: {}", btc_tx.len());
                       let mut hasher = Sha256::new();
                      hasher.update(&btc_tx);
                      let res1 = hasher.finalize();
+                     println!("[Tx Debug] SHA1: {}", hex::encode(res1));
                      let mut hasher2 = Sha256::new();
                      hasher2.update(res1);
                      return hasher2.finalize().to_vec();

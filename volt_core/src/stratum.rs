@@ -523,6 +523,8 @@ fn process_rpc_request(
                              use sha2::{Sha256, Digest};
                              let mut hasher = Sha256::new(); hasher.update(&coinbase_bytes);
                              let r1 = hasher.finalize();
+                             println!("[Stratum Debug] Coinb Len: {}", coinbase_bytes.len());
+                             println!("[Stratum Debug] SHA1: {}", hex::encode(r1));
                              let mut h2 = Sha256::new(); h2.update(r1);
                              let _coinbase_hash = h2.finalize();
                              
