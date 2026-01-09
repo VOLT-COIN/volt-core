@@ -901,6 +901,9 @@ fn handle_client_ws(
     let extra_nonce_1_val = format!("{:08x}", random_u32);
     let extra_nonce_1 = Arc::new(Mutex::new(extra_nonce_1_val)); // Session State
 
+    // FIX: Add duplicate share tracker
+    let mut submitted_nonces = HashSet::new();
+
     loop {
         // 1. Check Notifications (Inline - Single Threaded Loop)
         if *is_authorized.lock().unwrap() {
