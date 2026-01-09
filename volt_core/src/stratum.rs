@@ -299,10 +299,6 @@ impl StratumServer {
                             active_conns_inner.fetch_sub(1, Ordering::Relaxed);
                         });
 
-                        // ... Existing Loop ...
-                        // Connection Closed - Decrement
-                            active_conns_inner.fetch_sub(1, Ordering::Relaxed);
-                        });
                     }
                     Err(e) => println!("Connection failed: {}", e),
                 }
