@@ -369,6 +369,134 @@ impl Transaction {
                  }
              }
 
+             // Fallback for Local Generation: RECONSTRUCT BITCOIN-STYLE COINBASE
+             // When Stratum reconstructs the block, it sets script_sig with [Height, Nonce].
+             // We must serialize this exactly as the Miner did (Version 1, Inputs, Outputs, Locktime).
+             
+             // Check if we have the standard Coinbase pattern: [Push(Height), Push(Nonce)]
+             if self.script_sig.ops.len() == 2 {
+                 if let (Some(crate::script::OpCode::OpPush(height_bytes)), Some(crate::script::OpCode::OpPush(nonce_bytes))) = 
+                    (self.script_sig.ops.get(0), self.script_sig.ops.get(1)) 
+                 {
+                     // Found it! Build Bitcoin Serialization.
+                     let mut btc_tx = Vec::new();
+                     
+                     // 1. Version (4 Bytes LE) - Fixed to 1 in Stratum
+                     btc_tx.extend(&1u32.to_le_bytes());
+                     
+                     // 2. Input Count (VarInt 1)
+                     btc_tx.push(0x01);
+                     
+                     // 3. Input 0
+                     // PrevHash (32 bytes 0)
+                     btc_tx.extend(&[0u8; 32]);
+                     // Index (4 bytes 0xFFFFFFFF)
+                     btc_tx.extend(&[0xff, 0xff, 0xff, 0xff]);
+                     
+                     // ScriptSig
+                     // Format: [PushOp(Height) + PushOp(Nonce)]
+                     // Note: OpPush serialization usually includes length prefix.
+                     // But Stratum logic was: "04" + Height + "08" + Nonce.
+                     // We manually construct it to match Stratum EXACTLY.
+                     let mut script_bytes = Vec::new();
+                     // Height Push (0x04 + 4 bytes)
+                     script_bytes.push(0x04); 
+                     script_bytes.extend(height_bytes);
+                     // Nonce Push (0x08 + 8 bytes)
+                     script_bytes.push(0x08);
+                     script_bytes.extend(nonce_bytes);
+                     
+                     // Script Length (VarInt)
+                     btc_tx.push(script_bytes.len() as u8); // Assuming < 253
+                     btc_tx.extend(script_bytes);
+                     
+                     // Sequence (4 bytes 0xFFFFFFFF)
+                     btc_tx.extend(&[0xff, 0xff, 0xff, 0xff]);
+                     
+                     // 4. Output Count (VarInt 1)
+                     btc_tx.push(0x01);
+                     
+                     // 5. Output 0
+                     // Amount (8 bytes LE)
+                     btc_tx.extend(&self.amount.to_le_bytes());
+                     
+                     // ScriptPubKey (Standard P2PKH)
+                     // Stratum uses: 1976a914{PUBKEYHASH}88ac
+                     // 0x19 (25 bytes) + 76 (OP_DUP) + a9 (OP_HASH160) + 14 (20 bytes) + Hash + 88 (OP_EQUALVERIFY) + ac (OP_CHECKSIG)
+                     // We need to extract the PubKeyHash from our script_pub_key if possible, or reconstruct it from receiver?
+                     // self.script_pub_key contains Ops.
+                     // Standard P2PKH Ops: Dup, Hash256(Not 160!), Push(Hash), EqualVerify, CheckSig.
+                     // WAIT. Transaction::new() uses OP_HASH256 (SHA256).
+                     // But Stratum uses `1976a914...` which is STANDARD BITCOIN P2PKH (OP_HASH160 = SHA256 + RIPEMD160).
+                     // Stratum code:
+                     // let mut rip = Ripemd160::new(); rip.update(&sha_hash); ...
+                     // So Stratum generates HASH160.
+                     // Does our Transaction::new() generate HASH160?
+                     // In Transaction::new(): `let hash = Sha256::digest(&pub_key_bytes).to_vec();` -> ONLY SHA256!
+                     // THIS IS A MISMATCH. Stratum uses Ripemd160, Chain uses Sha256.
+                     
+                     // FIX: For this specific block reconstruction, we must trust the `script_pub_key` stored in the struct
+                     // if it was correctly deserialized from Stratum's data?
+                     // No, `process_rpc_request` clones `block.transactions[0]`.
+                     // The block template was created by `create_block_template` (Chain).
+                     // `chain.rs` uses `Transaction::new` -> Uses SHA256.
+                     // `stratum.rs` IGNORES `block.transactions[0].script_pub_key` and constructs its own P2PKH using Ripemd160!
+                     // "let cb2 = format!(... pub_key_hash_hex ...)"
+                     
+                     // So the internal `Transaction` object has a SHA256 logic, but the Miner receives a Ripemd160 Payout.
+                     // The Miner calculates the hash based on Ripemd160.
+                     // The Node calculates hash based on `Transaction` struct (SHA256).
+                     // They differ.
+                     
+                     // We must serialize using the ACTUAL Payout Script used by Stratum.
+                     // But we don't have the Ripemd160 hash here easily unless `script_pub_key` matches.
+                     // BUT, `process_rpc_request` modifies `block.transactions[0]` but DOES NOT update `script_pub_key` to match the Ripemd one.
+                     // It only updates `script_sig`.
+                     
+                     // CRITICAL FIX: We need to reconstruct the Payout Script using the method Stratum uses.
+                     // Stratum derives it from `server_wallet.get_address()`.
+                     // The `Transaction` object in the block has `receiver` = pool address.
+                     // We can try to re-derive the Ripemd160 hash from `receiver` (if it's public key hex).
+                     // `Transaction::new` stores `receiver` as string.
+                     
+                     // Reconstruct Payout:
+                     // 1. Decode Receiver (Pub Key Hex)
+                     // 2. Hash160 (Sha256 + Ripemd160)
+                     // 3. Build Standard P2PKH Script
+                     
+                     let pub_key_bytes = hex::decode(&self.receiver).unwrap_or(vec![]);
+                     use sha2::{Sha256, Digest};
+                     let sha_h = Sha256::digest(&pub_key_bytes);
+                     use ripemd::Ripemd160;
+                     let mut rip = Ripemd160::new();
+                     rip.update(&sha_h);
+                     let pub_key_hash = rip.finalize();
+                     
+                     let mut pk_script = Vec::new();
+                     pk_script.push(0x76); // OP_DUP
+                     pk_script.push(0xa9); // OP_HASH160
+                     pk_script.push(0x14); // Push 20 bytes
+                     pk_script.extend(pub_key_hash);
+                     pk_script.push(0x88); // OP_EQUALVERIFY
+                     pk_script.push(0xac); // OP_CHECKSIG
+                     
+                     btc_tx.push(pk_script.len() as u8);
+                     btc_tx.extend(pk_script);
+                     
+                     // 6. Locktime (4 bytes 0)
+                     btc_tx.extend(&[0u8, 0, 0, 0]);
+                     
+                     // Hash it
+                     use sha2::{Sha256, Digest};
+                     let mut hasher = Sha256::new();
+                     hasher.update(&btc_tx);
+                     let res1 = hasher.finalize();
+                     let mut hasher2 = Sha256::new();
+                     hasher2.update(res1);
+                     return hasher2.finalize().to_vec();
+                 }
+             }
+
              // Fallback for Local Generation (Validation Mode)
              // We serialize "sender", "receiver", "amount", "timestamp".
              bytes.extend(self.sender.as_bytes());
