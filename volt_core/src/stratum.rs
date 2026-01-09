@@ -150,10 +150,11 @@ pub struct StratumServer {
     server_wallet: Arc<Mutex<Wallet>>,
     active_connections: Arc<AtomicUsize>,
     shared_job: Arc<Mutex<JobState>>, // Global Job Source
+    node: Arc<crate::node::Node>, // Added: P2P Integration
 }
 
 impl StratumServer {
-    pub fn new(blockchain: Arc<Mutex<Blockchain>>, port: u16, mode: PoolMode, shares: Arc<Mutex<Vec<Share>>>, server_wallet: Arc<Mutex<Wallet>>) -> Self {
+    pub fn new(blockchain: Arc<Mutex<Blockchain>>, port: u16, mode: PoolMode, shares: Arc<Mutex<Vec<Share>>>, server_wallet: Arc<Mutex<Wallet>>, node: Arc<crate::node::Node>) -> Self {
         StratumServer { 
             blockchain, 
             port,
@@ -168,6 +169,7 @@ impl StratumServer {
                 difficulty: 0,
                 timestamp: 0
             })),
+            node,
         }
     }
 
@@ -247,6 +249,7 @@ impl StratumServer {
         }
         
         let shared_job_workers = self.shared_job.clone();
+        let node_workers = self.node.clone(); // Added: P2P Broadcast
 
         thread::spawn(move || {
             let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).expect("Failed to bind Stratum port");
@@ -269,6 +272,7 @@ impl StratumServer {
                         let wallet = wallet_ref.clone();
                         let active_conns_inner = active_conns.clone();
                         let job_source = shared_job_workers.clone();
+                        let node_ref = node_workers.clone(); // Pass to worker
 
                         thread::spawn(move || {
                             // Protocol Detection
@@ -281,12 +285,12 @@ impl StratumServer {
                             if is_websocket {
                                 match tungstenite::accept(stream) {
                                     Ok(socket) => {
-                                        handle_client_ws(socket, chain, mode, shares, wallet, job_source);
+                                        handle_client_ws(socket, chain, mode, shares, wallet, job_source, node_ref);
                                     }
                                     Err(e) => println!("[Stratum] WS Handshake Failed: {}", e),
                                 }
                             } else {
-                                handle_client(stream, chain, mode, shares, wallet, job_source);
+                                handle_client(stream, chain, mode, shares, wallet, job_source, node_ref);
                             }
                             
                             // Connection Closed - Decrement
@@ -394,8 +398,8 @@ fn process_rpc_request(
     last_job_id_ref: &Arc<Mutex<String>>, // Passed strict job id
     prev_job_id_ref: &Arc<Mutex<String>>, // Added: Previous Job ID
     prev_block_template_ref: &Arc<Mutex<Option<crate::block::Block>>>, // Added: Previous Template
-    submitted_nonces: &mut HashSet<(String, u32)> // Added: Duplicate Share Protection
-
+    submitted_nonces: &mut HashSet<(String, u32)>, // Added: Duplicate Share Tracker
+    node: &Arc<crate::node::Node> // Added: P2P Integration
 ) -> Option<serde_json::Value> {
     
     match req.method.as_str() {
@@ -674,6 +678,10 @@ fn process_rpc_request(
                                  // But we count it as a share below.
                              } else if chain_lock.submit_block(block.clone()) {
                                  chain_lock.save();
+                                 // FIX: Broadcast Mined Block to P2P Network
+                                 println!("[Stratum] Broadcasting Block #{} to Peers...", block.index);
+                                 node.broadcast_block(block.clone());
+                                 
                                  println!("[PPLNS] Block Found! Distributing Rewards...");
                                  // ... Payouts ...
                                  let total_reward = crate::block::Block::get_block_reward(block.index) as f64; 
@@ -766,7 +774,8 @@ fn handle_client(
     mode_ref: Arc<Mutex<PoolMode>>,
     shares_ref: Arc<Mutex<Vec<Share>>>,
     wallet_ref: Arc<Mutex<Wallet>>,
-    job_source: Arc<Mutex<JobState>>
+    job_source: Arc<Mutex<JobState>>,
+    node: Arc<crate::node::Node> // Added: P2P Broadcast
 ) {
     let peer_addr = stream.peer_addr().unwrap_or(std::net::SocketAddr::from(([0,0,0,0], 0)));
     println!("[Stratum TCP] Client connected: {}", peer_addr);
@@ -840,7 +849,7 @@ fn handle_client(
         if reader.read_line(&mut line).unwrap_or(0) == 0 { break; }
         if let Ok(req) = serde_json::from_str::<RpcRequest>(&line) {
             let res = process_rpc_request(req.clone(), &chain, &mode_ref, &shares_ref, &wallet_ref, &session_miner_addr, 
-                &current_block_template, &is_authorized, &last_notified_height, &extra_nonce_1, &last_job_id, &prev_job_id, &prev_block_template, &mut submitted_nonces); // Passed new args
+                &current_block_template, &is_authorized, &last_notified_height, &extra_nonce_1, &last_job_id, &prev_job_id, &prev_block_template, &mut submitted_nonces, &node); // Passed node
             
             if let Some(val) = res {
                 // FIX: Send Explicit Difficulty Notification BEFORE Response
@@ -877,7 +886,8 @@ fn handle_client_ws(
     mode_ref: Arc<Mutex<PoolMode>>,
     shares_ref: Arc<Mutex<Vec<Share>>>,
     wallet_ref: Arc<Mutex<Wallet>>,
-    job_source: Arc<Mutex<JobState>> // New Arg
+    job_source: Arc<Mutex<JobState>>, // New Arg
+    node: Arc<crate::node::Node> // Added: P2P Broadcast
 ) {
     println!("[Stratum WS] Client connected via WebSocket");
     
@@ -942,10 +952,10 @@ fn handle_client_ws(
                 if msg.is_text() || msg.is_binary() {
                     let text = msg.to_text().unwrap_or("");
                     if let Ok(req) = serde_json::from_str::<RpcRequest>(text) {
-                        let res = process_rpc_request(req.clone(), &chain, &mode_ref, &shares_ref, &wallet_ref, &session_miner_addr, 
-                            &current_block_template, &is_authorized, &last_notified_height, &extra_nonce_1, &last_job_id, &prev_job_id, &prev_block_template, &mut submitted_nonces); // Passed new args
+                         let res = process_rpc_request(req.clone(), &chain, &mode_ref, &shares_ref, &wallet_ref, &session_miner_addr, 
+                             &current_block_template, &is_authorized, &last_notified_height, &extra_nonce_1, &last_job_id, &prev_job_id, &prev_block_template, &mut submitted_nonces, &node); // Passed node
                         
-                        if let Some(val) = res {
+                         if let Some(val) = res {
                             let resp = RpcResponse { id: req.id, result: Some(val), error: None };
                             if let Ok(s) = serde_json::to_string(&resp) {
                                 let _ = socket.send(Message::Text(s));

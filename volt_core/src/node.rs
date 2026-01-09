@@ -49,6 +49,20 @@ impl Node {
         }
     }
 
+    pub fn broadcast_block(&self, block: Block) {
+        let peers = self.peers.lock().unwrap().clone();
+        let msg = Message::NewBlock(block);
+        let json = serde_json::to_string(&msg).unwrap();
+        
+        thread::spawn(move || {
+            for peer in peers {
+                if let Ok(mut stream) = TcpStream::connect(&peer) {
+                    let _ = stream.write_all(json.as_bytes());
+                }
+            }
+        });
+    }
+
     pub fn start_server(&self) {
         let port = self.port;
         // UPnP: Try to open port
