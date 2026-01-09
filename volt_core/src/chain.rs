@@ -1305,8 +1305,10 @@ impl Blockchain {
                  required_diff = 0;
              } else if block.difficulty >= 0x1f00ffff {
                  required_diff = 1;
-             } else {
+             } else if block.difficulty >= 0x1d00ffff {
                  required_diff = 4; // Standard
+             } else {
+                 required_diff = 8;
              }
          } else {
              // Legacy Small Int Difficulty
@@ -1453,9 +1455,15 @@ impl Blockchain {
         let last_block = self.get_last_block().unwrap();
         
         // Retarget every 1440 blocks (1 Day) - Production Standard
+        // Retarget every 1440 blocks (1 Day) - Production Standard
         let retarget_interval = 1440;
         let target_seconds_per_block = 60; // 1 Minute
         let target_timespan = retarget_interval * target_seconds_per_block;
+        
+        // FORCE TESTNET DIFFICULTY constant
+        if true {
+             return 0x207fffff;
+        }
 
         if (last_block.index + 1) % retarget_interval != 0 {
             return last_block.difficulty as u32;
