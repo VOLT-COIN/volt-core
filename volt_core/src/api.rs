@@ -535,14 +535,32 @@ fn handle_request(
                 
                 // Fetch Nonce (Use existing lock)
                 let sender_addr = wallet_lock.get_address();
-                let current_nonce = chain.state.get_nonce(&sender_addr);
-                let next_nonce = current_nonce + 1;
                 
-                // ... (Fee calc ...)
+                // SECURITY FIX: MEMPOOL CHECKS
+                // 1. Check Address Format
+                if hex::decode(&to).is_err() {
+                     return ApiResponse { status: "error".to_string(), message: "Invalid Receiver Address (Not Hex)".to_string(), data: None };
+                }
+
+                // 2. Check Balance (Prevent Mempool Spam)
+                let current_bal = chain.state.get_balance(&sender_addr, "VLT");
+                
+                // Fee calc
                 let final_fee = req.fee.unwrap_or_else(|| {
                      let calc = amount / 1000; // 0.1%
                      if calc < 100_000 { 100_000 } else { calc }
                 });
+                
+                if current_bal < (amount + final_fee) {
+                     return ApiResponse { 
+                        status: "error".to_string(), 
+                        message: format!("Insufficient Balance. Have: {}, Need: {} (Addr: {})", current_bal, amount + final_fee, sender_addr),
+                        data: None 
+                    };
+                }
+
+                let current_nonce = chain.state.get_nonce(&sender_addr);
+                let next_nonce = current_nonce + 1;
 
                 let mut tx = Transaction::new(
                     sender_addr,
