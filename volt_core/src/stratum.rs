@@ -556,11 +556,10 @@ fn process_rpc_request(
                              
                              // Update Merkle Root
                              if block.transactions.len() == 1 {
-                                 // Single Tx: Root = Coinbase Hash (Reversed for LE)
-                                 let mut root_le = coinbase_hash_manual.to_vec();
-                                 root_le.reverse();
-                                 // println!("[Stratum Debug] Calculated Merkle Root (LE): {}", hex::encode(&root_le));
-                                 block.merkle_root = hex::encode(root_le);
+                                 // Single Tx: Root = Coinbase Hash (Natural Order / BE for Block Struct)
+                                 let root_be = coinbase_hash_manual.to_vec();
+                                 // root_le.reverse(); // FIXED: Do not reverse here. Block struct uses BE string.
+                                 block.merkle_root = hex::encode(root_be);
                              } else {
                                  // Multi-Tx: Determine if we trust manual hash or struct hash
                                  // Ideally we should trust manual hash for the FIRST element.
