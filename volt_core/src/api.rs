@@ -533,8 +533,11 @@ fn handle_request(
                 // wallet_lock is already held
                 let mut chain = blockchain.lock().unwrap();
                 
-                // Fetch Nonce (Use existing lock)
+                // Fetch Nonce (Include Pending Txs)
                 let sender_addr = wallet_lock.get_address();
+                let state_nonce = chain.state.get_nonce(&sender_addr);
+                let pending_count = chain.pending_transactions.iter().filter(|t| t.sender == sender_addr).count() as u64;
+                let next_nonce = state_nonce + pending_count + 1;
                 
                 // SECURITY FIX: MEMPOOL CHECKS
                 // 1. Check Address Format
@@ -559,8 +562,9 @@ fn handle_request(
                     };
                 }
 
-                let current_nonce = chain.state.get_nonce(&sender_addr);
-                let next_nonce = current_nonce + 1;
+                // Nonce calculated above
+                // let current_nonce = chain.state.get_nonce(&sender_addr);
+                // let next_nonce = current_nonce + 1;
 
                 let mut tx = Transaction::new(
                     sender_addr,
