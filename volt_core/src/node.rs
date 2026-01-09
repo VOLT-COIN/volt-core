@@ -532,11 +532,21 @@ impl Node {
                                                 },
                                                 Message::Chain(chunk) => {
                                                      let mut c = chain_inner.lock().unwrap();
-                                                     // Reuse the logic: index 0 = Full, index > 0 = Chunk
                                                      if let Some(first) = chunk.first() {
                                                          if first.index == 0 { c.attempt_chain_replacement(chunk); }
                                                          else { c.handle_sync_chunk(chunk); }
                                                      }
+                                                },
+                                                Message::Headers(headers) => {
+                                                    println!("[Sync] Client Received {} Headers. Requesting Blocks...", headers.len());
+                                                    if let Some(first) = headers.first() {
+                                                        let start = first.index as usize;
+                                                        let limit = headers.len();
+                                                        let msg_get = Message::GetBlocks { start, limit };
+                                                        if let Ok(req_json) = serde_json::to_string(&msg_get) {
+                                                            let _ = socket.send(tungstenite::Message::Text(req_json));
+                                                        }
+                                                    }
                                                 },
                                                 _ => {}
                                              }
