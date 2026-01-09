@@ -189,7 +189,7 @@ impl StratumServer {
             let job_state = shared_job.clone();
             
             thread::spawn(move || {
-                let miner_addr = "SYSTEM_POOL".to_string(); // Placeholder, internal generator
+                // let miner_addr = "SYSTEM_POOL".to_string(); // FIX: Use Real Wallet Address to prevent mismatch in validation
                 println!("[Stratum] Job Updater Thread Started");
                 
                 loop {
@@ -197,9 +197,8 @@ impl StratumServer {
                     
                     let (h, next_block) = {
                         let c = chain.lock().unwrap();
-                         // Optimization: Don't get candidate if height hasn't changed AND time < 30s?
-                         // For now, keep logic simple: Get candidate.
-                        (c.get_height(), c.get_mining_candidate(miner_addr.clone()))
+                        let pool_addr = wallet.lock().unwrap().get_address();
+                        (c.get_height(), c.get_mining_candidate(pool_addr))
                     };
                     
                     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or(Duration::from_secs(0)).as_secs();
@@ -209,13 +208,20 @@ impl StratumServer {
                     {
                         let state = job_state.lock().unwrap();
                         let last_h = state.block_template.as_ref().map(|b| b.index).unwrap_or(0);
-                        if h != last_h || now % 60 == 0 { // Update every 60s or new block (Reduce Stale Shares)
+                        let last_tx_count = state.block_template.as_ref().map(|b| b.transactions.len()).unwrap_or(0);
+                        
+                        // Update if: 
+                        // 1. New Block (Height changed)
+                        // 2. New Txs (Mempool changed)
+                        // 3. Time passed (60s)
+                        if h != last_h || next_block.transactions.len() != last_tx_count || now % 60 == 0 { 
                             update_needed = true;
                         }
                     }
                     
                     if update_needed {
-                         let job_id = format!("{}_{}", next_block.index, next_block.timestamp);
+                         // Include Tx Count in Job ID to force unique ID when Txs change but timestamp is same
+                         let job_id = format!("{}_{}_{}", next_block.index, next_block.timestamp, next_block.transactions.len());
                          let pool_addr = wallet.lock().unwrap().get_address();
                          
                          if pool_addr == "LOCKED" {
@@ -231,6 +237,10 @@ impl StratumServer {
                          state.block_template = Some(next_block.clone());
                          state.difficulty = next_block.difficulty;
                          state.timestamp = next_block.timestamp;
+                         
+                         // Clean up submitted nonces for new job
+                         // We can't easily access the thread-local nonces of all clients here.
+                         // But since Job ID changed, the client nonces (keyed by JobID) are naturally fresh.
                     }
                 }
             });
