@@ -1,4 +1,4 @@
-﻿use std::net::{TcpListener, TcpStream};
+use std::net::{TcpListener, TcpStream};
 use std::io::{BufRead, BufReader, Write};
 use std::thread;
 use std::sync::{Arc, Mutex};
@@ -604,6 +604,8 @@ fn process_rpc_request(
                         block.hash = block.calculate_hash();
                         println!("[Stratum Debug] Reconstructed Block: Time={} Nonce={} Diff={} Merkle={}", 
                             block.timestamp, block.proof_of_work, block.difficulty, block.merkle_root);
+                        println!("[Stratum Debug] Header Hex: {}", block.get_header_hex());
+                        println!("[Stratum Debug] Header Hex: {}", block.get_header_hex());
 
 
                         // TARGET CHECKS

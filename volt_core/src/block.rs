@@ -112,17 +112,7 @@ impl Block {
         // Nonce (4 bytes)
         bytes.extend(&self.proof_of_work.to_le_bytes());
 
-        // DEBUG: Print Header
-        // Ensure it is 80 bytes
-        if bytes.len() == 80 {
-             println!("[Block Debug] Hashing Header: Root={} | Hex={}", self.merkle_root, hex::encode(&bytes));
-        } else {
-             println!("[Block Debug] WARNING: Header is {} bytes (Expected 80)", bytes.len());
-        }
-
-
-        // Hybrid Consensus: Validator Stake (Excluded from PoW Hash to maintain 80-byte Standard Header)
-        // bytes.extend(&self.validator_stake.to_le_bytes()); 
+        // DEBUG output removed to avoid spam
         
         let mut hasher = Sha256::new();
         hasher.update(&bytes);
@@ -134,6 +124,25 @@ impl Block {
         let res2 = hasher2.finalize();
         
         hex::encode(res2)
+    }
+
+    pub fn get_header_hex(&self) -> String {
+        let mut bytes = Vec::new();
+        bytes.extend(&1u32.to_le_bytes()); // Version
+        
+        let mut prev_hash_bytes = if self.previous_hash == "0" { vec![0u8; 32] } else { hex::decode(&self.previous_hash).unwrap_or(vec![0u8; 32]) };
+        prev_hash_bytes.reverse();
+        bytes.extend(&prev_hash_bytes); 
+        
+        let mut merkle_bytes = hex::decode(&self.merkle_root).unwrap_or(vec![0u8; 32]);
+        merkle_bytes.reverse();
+        bytes.extend(&merkle_bytes); 
+        
+        bytes.extend(&(self.timestamp as u32).to_le_bytes());
+        bytes.extend(&self.difficulty.to_le_bytes());
+        bytes.extend(&self.proof_of_work.to_le_bytes());
+        
+        hex::encode(&bytes)
     }
 
     pub fn mine(&mut self, difficulty: usize, max_iterations: u64) -> bool {
