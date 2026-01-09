@@ -295,7 +295,39 @@ impl StratumServer {
                                 handle_client(stream, chain, mode, shares, wallet, job_source, node_ref);
                             }
                             
-                            // Connection Closed - Decrement
+                            // VarDiff Logic
+                        let now = std::time::Instant::now();
+                        let time_since_last = now.duration_since(last_share_time).as_secs_f64();
+                        last_share_time = now;
+
+                        let mut new_diff = current_vardiff;
+                        if time_since_last < target_share_time * (1.0 - variance) {
+                             // Too Fast -> Increase Difficulty
+                             new_diff *= 2.0;
+                        } else if time_since_last > target_share_time * (1.0 + variance) {
+                             // Too Slow -> Decrease Difficulty
+                             new_diff /= 2.0;
+                        }
+                        
+                        // Bounds Check
+                        if new_diff < 0.001 { new_diff = 0.001; }
+                        if new_diff > 1.0 { new_diff = 1.0; } // Don't go too crazy on single CPU
+
+                        if (new_diff - current_vardiff).abs() > 0.0001 {
+                             current_vardiff = new_diff;
+                             *current_vardiff_ref.lock().unwrap() = current_vardiff;
+                             println!("[VarDiff] Retargeting Miner {} to Diff={:.4} (Rate={:.2}s)", session_miner_addr.lock().unwrap(), current_vardiff, time_since_last);
+                             
+                             let notify = serde_json::json!({
+                                 "id": null,
+                                 "method": "mining.set_difficulty",
+                                 "params": [current_vardiff]
+                             });
+                             let _ = stream_writer_resp.write_all((notify.to_string() + "\n").as_bytes());
+                        }
+
+                        // ... Existing Loop ...
+                        // Connection Closed - Decrement
                             active_conns_inner.fetch_sub(1, Ordering::Relaxed);
                         });
                     }
@@ -818,6 +850,13 @@ fn handle_client(
     
     // FIX: Add duplicate share tracker
     let mut submitted_nonces = HashSet::new();
+
+    // VarDiff State
+    let mut last_share_time = std::time::Instant::now();
+    let mut current_vardiff = 0.01; // Start Low
+    let target_share_time = 3.0; // Seconds (20 shares/min)
+    let variance = 0.40; // 40% variance allowed
+    let current_vardiff_ref = Arc::new(Mutex::new(current_vardiff));
 
     // Notifier Thread
     let (block_n, prev_block_n, auth_n, last_job_n, prev_job_n, job_src_n) = (

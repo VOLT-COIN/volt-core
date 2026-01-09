@@ -1461,9 +1461,9 @@ impl Blockchain {
         let target_timespan = retarget_interval * target_seconds_per_block;
         
         // FORCE TESTNET DIFFICULTY constant
-        if true {
-             return 0x1effffff;
-        }
+        // if true {
+        //      return 0x1effffff;
+        // }
 
         if (last_block.index + 1) % retarget_interval != 0 {
             return last_block.difficulty as u32;
