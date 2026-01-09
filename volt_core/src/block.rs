@@ -46,6 +46,14 @@ impl Block {
         }
         let mut hashes: Vec<Vec<u8>> = transactions.iter().map(|tx| tx.get_hash()).collect();
         
+        // Edge Case: Single Transaction (Coinbase only)
+        // In Bitcoin, the root IS the transaction hash (Double SHA256 of Tx).
+        // Since get_hash already returns the hash, we can just use it directly?
+        // Yes, if hashes.len() == 1, that hash IS the root.
+        if hashes.len() == 1 {
+            return hex::encode(&hashes[0]);
+        }
+        
         while hashes.len() > 1 {
             if hashes.len() % 2 != 0 {
                 hashes.push(hashes.last().unwrap().clone());

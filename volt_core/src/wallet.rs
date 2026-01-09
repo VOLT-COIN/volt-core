@@ -107,10 +107,15 @@ impl Wallet {
         encrypted.mnemonic = self.mnemonic.clone();
 
         let json = serde_json::to_string(&encrypted).unwrap();
-        if fs::write("wallet.enc", json).is_ok() {
-             // Successfully saved encrypted. Safe to delete legacy.
-             let _ = fs::remove_file("wallet.key");
-             return true;
+        
+        // Atomic Write (Prevent Corruption)
+        let temp_file = "wallet.enc.tmp";
+        if fs::write(temp_file, json).is_ok() {
+             if fs::rename(temp_file, "wallet.enc").is_ok() {
+                 // Successfully saved encrypted. Safe to delete legacy.
+                 let _ = fs::remove_file("wallet.key");
+                 return true;
+             }
         }
         false
     }
