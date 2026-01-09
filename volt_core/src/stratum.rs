@@ -707,7 +707,7 @@ fn process_rpc_request(
                                  let total_reward = crate::block::Block::get_block_reward(block.index) as f64; 
                                  let fee = 0.0;
                                  let distributable = total_reward - fee;
-                                 let mut shares_lock = shares_ref.lock().unwrap();
+                                 let shares_lock = shares_ref.lock().unwrap();
                                   // PPLNS Implementation: Pay Per Last N Shares
                                   let pplns_window = 2000;
                                   // We take the last N shares. Since shares are pushed to the end, we reverse or take from end.
@@ -833,7 +833,7 @@ fn handle_client(
 
     // VarDiff State
     let mut last_share_time = std::time::Instant::now();
-    let mut current_vardiff = 0.01; // Start Low
+    let mut current_vardiff: f64 = 0.01; // Start Low
     let target_share_time = 3.0; // Seconds (20 shares/min)
     let variance = 0.40; // 40% variance allowed
     let current_vardiff_ref = Arc::new(Mutex::new(current_vardiff));
