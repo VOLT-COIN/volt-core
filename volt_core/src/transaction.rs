@@ -381,6 +381,7 @@ impl Transaction {
                  {
                      // Found it! Build Bitcoin Serialization.
                      let mut btc_tx = Vec::new();
+                     println!("[Tx Debug] Native Coinbase Reconstruction Triggered!");
                      
                      // 1. Version (4 Bytes LE) - Fixed to 1 in Stratum
                      btc_tx.extend(&1u32.to_le_bytes());
@@ -490,8 +491,9 @@ impl Transaction {
                      // 6. Locktime (4 bytes 0)
                      btc_tx.extend(&[0u8, 0, 0, 0]);
                      
-                     // Hash it
-                     let mut hasher = Sha256::new();
+                      // Hash it
+                      println!("[Tx Debug] Reconstructed Hex: {}", hex::encode(&btc_tx));
+                      let mut hasher = Sha256::new();
                      hasher.update(&btc_tx);
                      let res1 = hasher.finalize();
                      let mut hasher2 = Sha256::new();

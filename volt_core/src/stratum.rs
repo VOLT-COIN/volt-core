@@ -518,6 +518,7 @@ fn process_rpc_request(
                         // println!("[Stratum Debug] Reconstructed Coinbase: {}", coinb);
 
                         
+                        println!("[Stratum Debug] Coinb: {}", coinb);
                         if let Ok(coinbase_bytes) = hex::decode(&coinb) {
                              use sha2::{Sha256, Digest};
                              let mut hasher = Sha256::new(); hasher.update(&coinbase_bytes);
