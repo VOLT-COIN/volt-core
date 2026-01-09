@@ -735,8 +735,10 @@ fn process_rpc_request(
                              }
                              // If stale, we fall through to Share Accepted
                          } else if is_valid_share {
-                            // Valid Share
-                            // println!("[Stratum] Share Accepted ...");
+                            // Valid Share Accepted
+                            let miner_id = session_miner_addr.lock().unwrap().clone();
+                            // Do not spam too much if we have many miners, but for local it is fine.
+                            println!("[Stratum] Share Accepted: Miner={} Diff=0.5", miner_id);
 
                             
                             let mut s_lock = shares_ref.lock().unwrap();
