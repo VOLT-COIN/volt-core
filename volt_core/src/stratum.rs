@@ -87,12 +87,28 @@ fn create_mining_notify(
     let cb2 = format!("ffffffff01{}1976a914{}88ac00000000", amt_hex, pub_key_hash_hex);
 
     // 4. Branch (Merkle Path)
+    // 4. Branch (Merkle Path)
     let mut branch = Vec::new();
     let mut hashes: Vec<Vec<u8>> = next_block.transactions.iter().map(|tx| tx.get_hash()).collect();
-    if hashes.len() > 1 {
+    
+    while hashes.len() > 1 {
        if hashes.len() % 2 != 0 { hashes.push(hashes.last().unwrap().clone()); }
-       // Simple Single-Branch for 1 TX (Coinbase) + n Txs
-       if hashes.len() > 1 { branch.push(hex::encode(&hashes[1])); }
+       
+       // For Coinbase (Index 0), the sibling is ALWAYS Index 1.
+       branch.push(hex::encode(&hashes[1]));
+       
+       // Move to next level
+       let mut new_hashes = Vec::new();
+       for chunk in hashes.chunks(2) {
+           let mut hasher = sha2::Sha256::new();
+           hasher.update(&chunk[0]);
+           hasher.update(&chunk[1]);
+           let res = hasher.finalize();
+           let mut hasher2 = sha2::Sha256::new();
+           hasher2.update(res);
+           new_hashes.push(hasher2.finalize().to_vec());
+       }
+       hashes = new_hashes;
     }
 
     // FIX: Difficulty is already stored as Compact Target in Block struct (e.g. 0x1d00ffff)
