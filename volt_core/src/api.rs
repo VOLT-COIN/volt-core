@@ -7,7 +7,7 @@ use serde_json::Value;
 use crate::chain::Blockchain;
 // use crate::vm::WasmVM; // Unused
 use crate::wallet::Wallet;
-// use crate::transaction::Transaction; // Unused
+use crate::transaction::Transaction; // Restore Import
 use crate::node::Node;
 
 use crate::stratum::Share;
