@@ -892,6 +892,8 @@ fn handle_client(
         // No, we want to control Diff strictly.
         // Let's perform checking HERE, but only act if it's a SHARE (mining.submit).
         // Parsing line twice is cheap.
+        let mut should_notify = false;
+
         if line.contains("mining.submit") {
              let now = std::time::Instant::now();
              let time_since_last = now.duration_since(last_share_time).as_secs_f64();
@@ -910,18 +912,20 @@ fn handle_client(
              if new_diff < 0.001 { new_diff = 0.001; }
              if new_diff > 1.0 { new_diff = 1.0; } 
 
-             if (new_diff - current_vardiff).abs() > 0.0001 {
+             if (new_diff - current_vardiff).abs() > 0.0001f64 {
                   current_vardiff = new_diff;
                   *current_vardiff_ref.lock().unwrap() = current_vardiff;
                   println!("[VarDiff] Retargeting Miner {} to Diff={:.4} (Rate={:.2}s)", session_miner_addr.lock().unwrap(), current_vardiff, time_since_last);
-                  
-                  let notify = serde_json::json!({
-                      "id": null,
-                      "method": "mining.set_difficulty",
-                      "params": [current_vardiff]
-                  });
-                  let _ = stream_writer_resp.write_all((notify.to_string() + "\n").as_bytes());
+                  should_notify = true;
              }
+        }
+        if should_notify {
+             let notify = serde_json::json!({
+                 "id": null,
+                 "method": "mining.set_difficulty",
+                 "params": [current_vardiff]
+             });
+             let _ = stream_writer_resp.write_all((notify.to_string() + "\n").as_bytes());
         }
         if let Ok(req) = serde_json::from_str::<RpcRequest>(&line) {
             let res = process_rpc_request(req.clone(), &chain, &mode_ref, &shares_ref, &wallet_ref, &session_miner_addr, 
@@ -1027,9 +1031,12 @@ fn handle_client_ws(
             Ok(msg) => {
                 if msg.is_text() || msg.is_binary() {
                     let text = msg.to_text().unwrap_or("");
+                    // WebSocket VarDiff Placeholder (Static 0.01 for now)
+                    let current_vardiff = 0.01;
+                    
                     if let Ok(req) = serde_json::from_str::<RpcRequest>(text) {
                          let res = process_rpc_request(req.clone(), &chain, &mode_ref, &shares_ref, &wallet_ref, &session_miner_addr, 
-                             &current_block_template, &is_authorized, &last_notified_height, &extra_nonce_1, &last_job_id, &prev_job_id, &prev_block_template, &mut submitted_nonces, &node); // Passed node
+                             &current_block_template, &is_authorized, &last_notified_height, &extra_nonce_1, &last_job_id, &prev_job_id, &prev_block_template, &mut submitted_nonces, &node, current_vardiff);
                         
                          if let Some(val) = res {
                             let resp = RpcResponse { id: req.id, result: Some(val), error: None };
