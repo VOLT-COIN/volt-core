@@ -752,7 +752,9 @@ fn process_rpc_request(
                                                   let mut signed_tx = tx.clone();
                                                   signed_tx.signature = hex::encode(signature.to_bytes());
                                                   chain_lock.pending_transactions.push(signed_tx);
-                                               }
+                                                  
+                                                  println!("[PPLNS] Paying {:.8} VLT to Miner: {} (Tx Fee: {:.8} VLT)", net_amount as f64 / 1e8, miner, tx_fee as f64 / 1e8);
+                                                }
                                           }
                                       }
                                       // PPLNS: DO NOT CLEAR SHARES. They are valid for future blocks until they fall out of window.
