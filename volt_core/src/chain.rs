@@ -1377,7 +1377,7 @@ impl Blockchain {
               return false;
          }
 
-         let last = self.get_last_block().unwrap_or(self.create_genesis_block());
+         let last = self.get_last_block().unwrap_or_else(|| self.create_genesis_block());
          if block.previous_hash != last.hash || block.index != last.index + 1 {
               println!("[Security] Invalid Previous Hash or Index");
               return false;
