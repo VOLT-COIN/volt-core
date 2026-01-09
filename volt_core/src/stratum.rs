@@ -63,8 +63,10 @@ fn create_mining_notify(
     // 2. Coinbase Part 1
     // Height (LE) -> Pushed as hex
     let h_bytes = (next_block.index as u32).to_le_bytes();
-    let h_push = format!("0c{}", hex::encode(h_bytes)); // PUSH 12 bytes
-    let cb1 = format!("010000000100000000000000000000000000000000000000000000000000000000ffffffff0d{}", h_push);
+    let h_push = format!("04{}", hex::encode(h_bytes)); // PUSH 4 bytes (Height)
+    // ScriptSig: Length(14=0x0e) + PUSH4(Height) + PUSH8(Nonces)
+    // coinb1 ends with "08" (PUSH 8 bytes) so miner appending 8 bytes of nonces completes the Opcode payload.
+    let coinb1 = format!("010000000100000000000000000000000000000000000000000000000000000000ffffffff0e{}08", h_push);
     
     // 3. Coinbase Part 2 (Payout Script)
     // Server Wallet P2PKH
@@ -129,7 +131,7 @@ fn create_mining_notify(
 
     serde_json::json!({
         "id": null, "method": "mining.notify",
-        "params": [ job_id, next_block.previous_hash, cb1, cb2, branch, version_hex, bits_hex, ntime_hex, true ]
+        "params": [ job_id, next_block.previous_hash, coinb1, cb2, branch, version_hex, bits_hex, ntime_hex, true ]
     })
 } 
 
@@ -474,13 +476,8 @@ fn process_rpc_request(
 
 
                         // Dynamic Script Length Calculation
-                        // ScriptSig = PUSH(Height) + Height + PUSH(ExtraNonce) + En1 + Ex2
-                        // Wait. Bitcoin standard Stratum puts Height alone.
-                        // Then En1/Ex2 are usually in the script too.
-                        // Our protocol: Push Height, Pad Zeros to 12 bytes? No.
-                        // We generated "0c" + Height + En1 + Ex2.
-                        // "0c" matches 12 bytes total. Length(Height=4 + En1=4 + Ex2=4) = 12.
-                        // If Ex2 is longer, we MUST update the opcode.
+                        // ScriptSig = PUSH(Height) + PUSH(ExtraNonce)
+                        // Our protocol: PUSH4(Height) + PUSH8(Nonces)
                         
                         // Strictly Validated Reconstruction
                         if ex2.len() != 8 { // 4 bytes = 8 hex chars
@@ -488,7 +485,9 @@ fn process_rpc_request(
                              return Some(serde_json::json!(false));
                         }
 
-                        let coinb1 = format!("010000000100000000000000000000000000000000000000000000000000000000ffffffff0d0c{}", hex::encode(height_bytes));
+                        // Update to match new Standard: PUSH4(Height) + PUSH8(Nonces)
+                        // Length 14 (0e). h_push uses 04. PUSH8 opcode (08) acts as separator.
+                        let coinb1 = format!("010000000100000000000000000000000000000000000000000000000000000000ffffffff0e04{}08", hex::encode(height_bytes));
                         
                         // Dynamic P2PKH Script (Use ADDRESS FROM BLOCK, not Wallet State)
                         // This ensures that if the wallet changed, we still validate old shares correctly.
@@ -531,13 +530,19 @@ fn process_rpc_request(
                              let mut h2 = Sha256::new(); h2.update(r1);
                              let _coinbase_hash = h2.finalize();
                              
-                             let mut script_data = Vec::new();
-                             script_data.extend_from_slice(&height_bytes);
-                             script_data.extend_from_slice(&[0,0,0,0]);
-                             if let Ok(ex2_bytes) = hex::decode(ex2) { script_data.extend(ex2_bytes); }
-                             
-                             let mut tx = block.transactions[0].clone();
-                             tx.script_sig = crate::script::Script::new().push(crate::script::OpCode::OpPush(script_data));
+                              let mut tx = block.transactions[0].clone();
+                              
+                              // Fix: Correctly construct ScriptSig for Storage (Two Pushes)
+                              let mut nonces = Vec::new();
+                              let extra_nonce_1_bytes = hex::decode(extra_nonce_1).unwrap_or(vec![0;4]);
+                              let extra_nonce_2_bytes = hex::decode(ex2).unwrap_or(vec![0;4]);
+                              nonces.extend(extra_nonce_1_bytes);
+                              nonces.extend(extra_nonce_2_bytes);
+                              
+                              tx.script_sig = crate::script::Script::new()
+                                  .push(crate::script::OpCode::OpPush(height_bytes.to_vec()))
+                                  .push(crate::script::OpCode::OpPush(nonces));
+                                  
                              block.transactions[0] = tx; // Store for valid chain data
                              
                              // Force Merkle Root from Manual Coinbase (Exact match with Miner)
