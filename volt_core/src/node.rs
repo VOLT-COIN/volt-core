@@ -337,7 +337,7 @@ impl Node {
                                                 // But we can verify the PoW matches the bits claimed in the header.
                                                 // And we can verify the Timestamp is not too far in future.
                                                 
-                                                let diff_target = h.difficulty; // Bits
+                                                let _diff_target = h.difficulty; // Bits (Underscore to silence unused warning)
                                                 // TODO: Re-implement calculate_target mechanism or use Block::check_pow()
                                                 // Since we stripped Txs, we might break Merkle Root checks if they depend on Txs?
                                                 // No, Block::calculate_hash uses the Merkle Root string in the struct.
@@ -470,7 +470,7 @@ impl Node {
                 
                 // 2. Determine Sync Status
                 let chain = chain_client.lock().unwrap();
-                let my_height = chain.get_height() as usize;
+                let _my_height = chain.get_height() as usize; // Check height
                 drop(chain); // Unlock
 
                 // 3. Distributed Sync: Randomly select a peer to request next chunk
@@ -491,7 +491,7 @@ impl Node {
                             let _ = socket.send(tungstenite::Message::Text(serde_json::to_string(&Message::GetPeers).unwrap_or_default()));
                             
                             // Header-First Sync: Ask for headers first
-                            let (my_height, locator) = {
+                            let (_my_height, locator) = {
                                 let c = chain_inner.lock().unwrap();
                                 let h = c.get_height() as usize;
                                 let hash = c.get_last_block().map(|b| b.hash).unwrap_or("0".to_string());
@@ -598,7 +598,7 @@ impl Node {
               }
         } else {
              // ... Raw TCP Logic ...
-             if let Ok(mut stream) = TcpStream::connect(&peer_addr) {
+             if let Ok(_stream) = TcpStream::connect(&peer_addr) {
               // ... Raw TCP Logic ...
               if let Ok(mut stream) = TcpStream::connect(&peer_addr) {
                    // Header-First Sync
@@ -666,17 +666,6 @@ impl Node {
 
 
     #[allow(dead_code)]
-    pub fn broadcast_block(&self, block: Block) {
-        let msg = Message::NewBlock(block);
-        let msg_json = serde_json::to_string(&msg).unwrap_or_default();
-        let peers = self.peers.lock().unwrap();
-        
-        for peer in peers.iter() {
-             if let Ok(mut stream) = TcpStream::connect(peer) {
-                 let _ = stream.write(msg_json.as_bytes());
-             }
-        }
-    }
 
     pub fn start_discovery(&self) {
         let peers_ref = self.peers.clone();

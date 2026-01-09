@@ -3,7 +3,7 @@ use crate::block::Block;
 use crate::transaction::{Transaction, TxType};
 use crate::db::Database;
 use crate::script::VirtualMachine;
-use crate::vm::WasmVM; // Import WasmVM
+
 
 use std::collections::{HashMap, BTreeMap, HashSet};
 use std::sync::Arc;

@@ -1,11 +1,9 @@
 use revm::{
     db::{CacheDB, EmptyDB},
-    primitives::{address, Bytecode, TransactTo, U256, Address, ExecutionResult, Output, CreateScheme},
+    primitives::{TransactTo, U256, Address, ExecutionResult, Output, CreateScheme},
     EVM,
 };
 use std::str::FromStr;
-use std::sync::{Arc, Mutex};
-use crate::vm::Storage; // Basic Hashmap
 
 pub struct EvmRunner {
     pub db: CacheDB<EmptyDB>,
