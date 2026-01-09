@@ -655,7 +655,7 @@ fn process_rpc_request(
                                  chain_lock.save();
                                  println!("[PPLNS] Block Found! Distributing Rewards...");
                                  // ... Payouts ...
-                                 let total_reward = 50.0 * 1e8; 
+                                 let total_reward = crate::block::Block::get_block_reward(block.index) as f64; 
                                  let fee = 0.0;
                                  let distributable = total_reward - fee;
                                  let mut shares_lock = shares_ref.lock().unwrap();
