@@ -613,7 +613,7 @@ fn process_rpc_request(
                              }
                         } else if is_valid_share {
                             // Valid Share
-                            println!("[Stratum] Accepted Share from {} (Diff 0.001+)", session_miner_addr.lock().unwrap());
+                            println!("[Stratum] Share Accepted from {} (Diff 0.001+ / Target Matches)", session_miner_addr.lock().unwrap());
                             
                             let mut s_lock = shares_ref.lock().unwrap();
                             if s_lock.len() > 5000 { s_lock.remove(0); } // Prevent Memory Leak
@@ -626,7 +626,7 @@ fn process_rpc_request(
                             });
                             return Some(serde_json::json!(true));
                         } else {
-                            println!("[Stratum] Rejected Share from {} - Hash: {}", session_miner_addr.lock().unwrap(), block.hash);
+                            println!("[Stratum] Rejected Share from {} - Hash: {} (Target: 00000...)", session_miner_addr.lock().unwrap(), block.hash);
                             // Return false to let miner know it was rejected? 
                             // Stratum usually expects a bool result for submit.
                             return Some(serde_json::json!(false));
