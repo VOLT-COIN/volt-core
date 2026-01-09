@@ -454,30 +454,41 @@ fn process_rpc_request(
                         // "0c" matches 12 bytes total. Length(Height=4 + En1=4 + Ex2=4) = 12.
                         // If Ex2 is longer, we MUST update the opcode.
                         
-                        let total_extra_len = 4 + 4 + (ex2.len() / 2); // Height(4) + En1(4) + Ex2(Bytes)
-                        let push_opcode = match total_extra_len {
-                            0..=75 => format!("{:02x}", total_extra_len), // Direct byte
-                            _ => "4c".to_string(), // OP_PUSHDATA1 (Not handled fully here, assuming small ex2)
+                        // Strictly Validated Reconstruction
+                        if ex2.len() != 8 { // 4 bytes = 8 hex chars
+                             println!("[Stratum] Rejected Share: Invalid ExtraNonce2 Size (Expected 4 bytes)");
+                             return Some(serde_json::json!(false));
+                        }
+
+                        let coinb1 = format!("010000000100000000000000000000000000000000000000000000000000000000ffffffff0d0c{}", hex::encode(height_bytes));
+                        
+                        // Dynamic P2PKH Script (Use ADDRESS FROM BLOCK, not Wallet State)
+                        // This ensures that if the wallet changed, we still validate old shares correctly.
+                        let pool_addr_hex = &block.transactions[0].sender; // We use 'sender' field for P2PKH public key in Coinbase?
+                        // Wait, Coinbase doesn't have a sender usually ("SYSTEM"). 
+                        // The Payout Script is in the OUTPUT (Coinbase has 1 Input, 1 Output).
+                        // The Output is constructed in 'coinb2'.
+                        // We need the PUBKEY HASH that was used.
+                        // In create_mining_notify, we derived it from pool_addr_hex.
+                        // In `start()`: `pool_addr = wallet.get_address()` (Hex PubKey).
+                        // So `receiver` should be the Hex Pubkey.
+                        
+                        let pool_addr_from_template = &block.transactions[0].receiver;
+                        // But wait, our 'receiver' field stores the ADDRESS string (e.g. "1A1z...").
+                        // We need the PUBKEY (for P2PKH script). 
+                        // Wallet::get_address returns HEX encoded PUBKEY (Compressed/Uncompressed).
+                        // Is 'receiver' the Hex Pubkey? Or Base58 Address?
+                        // In `create_mining_notify`: `pool_addr_hex` is passed. 
+                        // In `start()`: `pool_addr = wallet.get_address()` (Hex PubKey).
+                        // So `receiver` should be the Hex Pubkey.
+                        
+                        let pool_addr_hex = if pool_addr_from_template == "SYSTEM" || pool_addr_from_template.is_empty() {
+                             // Fallback (Should not happen for valid templates)
+                             server_wallet.lock().unwrap().get_address()
+                        } else {
+                             pool_addr_from_template.clone()
                         };
-                        
-                        // BUT create_mining_notify hardcoded "0c" and "0d".
-                        // If we change it here, it mismatches notify!
-                        // So correct fix is to ensure notify uses same logic or accept mismatch if notification was wrong.
-                        // But Notify sends coinb1 ending in 0d....
-                        // Let's assume notify used standard 4-byte Ex2 logic.
-                        // If Ex2 is NOT 8 chars (4 bytes), we have a problem.
-                        
-                        let h_push = format!("{}{}", push_opcode, hex::encode(height_bytes)); 
-                        
-                        // Recalc Script Len (PUSH + Len)
-                        // Script = Opcode(1) + Height(4) + En1(4) + Ex2(Len/2).
-                        let script_len = 1 + total_extra_len; 
-                        let script_len_hex = format!("{:02x}", script_len);
-                        
-                        let coinb1 = format!("010000000100000000000000000000000000000000000000000000000000000000ffffffff{}{}", script_len_hex, h_push);
-                        
-                        // Dynamic P2PKH Script (Server Wallet)
-                        let pool_addr_hex = server_wallet.lock().unwrap().get_address();
+
                         let pub_key_bytes = hex::decode(&pool_addr_hex).unwrap_or(vec![0;33]);
 
                         use sha2::{Sha256, Digest};
