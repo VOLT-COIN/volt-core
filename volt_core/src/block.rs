@@ -107,7 +107,10 @@ impl Block {
 
         // DEBUG: Print Header
         // Ensure it is 80 bytes
-        if bytes.len() != 80 {
+        if bytes.len() == 80 {
+            println!("[Stratum Debug] Hashing Header (80 bytes): {}", hex::encode(&bytes));
+        } else {
+            println!("[Stratum Debug] CRITICAL ERROR: Header length is {} (Expected 80)", bytes.len());
         }
 
         // Hybrid Consensus: Validator Stake (Excluded from PoW Hash to maintain 80-byte Standard Header)
