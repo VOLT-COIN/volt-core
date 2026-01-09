@@ -688,47 +688,56 @@ fn process_rpc_request(
                                  let fee = 0.0;
                                  let distributable = total_reward - fee;
                                  let mut shares_lock = shares_ref.lock().unwrap();
-                                 let total_shares: f64 = shares_lock.iter().map(|s| s.difficulty).sum();
-                                 if total_shares > 0.0 {
-                                     let reward_per_share = distributable / total_shares;
-                                     let mut payouts: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
-                                     for s in shares_lock.iter() {
-                                         *payouts.entry(s.miner.clone()).or_insert(0.0) += s.difficulty * reward_per_share;
-                                     }
-                                     // FIX: Iterate by reference to avoid moving 'payouts'
-                                     for (_miner, _amount) in &payouts {
-                                         // If stale, we might reduce reward? For PPLNS, usually full credit.
-                                         // But WE CANNOT SUBMIT STALE BLOCK TO CHAIN.
-                                         if is_stale { continue; } 
-                                     } 
-                                     if is_stale {
-                                          println!("[Stratum] Stale Block - Valid PoW but old parent. Submitting as Share only.");
-                                     } else {
-                                          // Logic continues...
-                                          let pool_addr = server_wallet.lock().unwrap().get_address();
-                                          let mut current_nonce = chain_lock.state.get_nonce(&pool_addr);
-                                     for (miner, amount) in payouts { // Consume here is fine
-                                         let amount_u64 = amount as u64;
-                                         let base_fee = 100_000;
-                                         let percentage_fee = (amount_u64 as f64 * 0.001) as u64;
-                                         let tx_fee = base_fee + percentage_fee;
-                                         if amount_u64 > tx_fee + 1000 {
-                                              current_nonce += 1;
-                                              let net_amount = amount_u64 - tx_fee;
-                                              let tx = crate::transaction::Transaction::new(
-                                                  pool_addr.clone(), miner.clone(), net_amount, "VLT".to_string(), current_nonce, tx_fee
-                                              );
-                                              if let Some(pk) = &server_wallet.lock().unwrap().private_key {
-                                                 use k256::ecdsa::signature::Signer;
-                                                 let signature: k256::ecdsa::Signature = pk.sign(&tx.get_hash());
-                                                 let mut signed_tx = tx.clone();
-                                                 signed_tx.signature = hex::encode(signature.to_bytes());
-                                                 chain_lock.pending_transactions.push(signed_tx);
-                                              }
-                                         }
-                                     }
-                                     shares_lock.clear();
-                                 }
+                                  // PPLNS Implementation: Pay Per Last N Shares
+                                  let pplns_window = 2000;
+                                  // We take the last N shares. Since shares are pushed to the end, we reverse or take from end.
+                                  // Taking from end: skip (len - N) if len > N.
+                                  // Or simpler: iter().rev().take(N)
+                                  
+                                  let shares_in_window: Vec<_> = shares_lock.iter().rev().take(pplns_window).collect();
+                                  let total_shares_window: f64 = shares_in_window.iter().map(|s| s.difficulty).sum();
+                                  
+                                  if total_shares_window > 0.0 {
+                                      let reward_per_share = distributable / total_shares_window;
+                                      let mut payouts: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+                                      
+                                      for s in shares_in_window {
+                                          *payouts.entry(s.miner.clone()).or_insert(0.0) += s.difficulty * reward_per_share;
+                                      }
+                                      
+                                      // FIX: Iterate by reference to avoid moving 'payouts'
+                                      for (_miner, _amount) in &payouts {
+                                          if is_stale { continue; } 
+                                      } 
+                                      if is_stale {
+                                           println!("[Stratum] Stale Block - Valid PoW but old parent. Submitting as Share only.");
+                                      } else {
+                                           // Logic continues...
+                                           let pool_addr = server_wallet.lock().unwrap().get_address();
+                                           let mut current_nonce = chain_lock.state.get_nonce(&pool_addr);
+                                      for (miner, amount) in payouts { // Consume here is fine
+                                          let amount_u64 = amount as u64;
+                                          let base_fee = 100_000;
+                                          let percentage_fee = (amount_u64 as f64 * 0.001) as u64;
+                                          let tx_fee = base_fee + percentage_fee;
+                                          if amount_u64 > tx_fee + 1000 {
+                                               current_nonce += 1;
+                                               let net_amount = amount_u64 - tx_fee;
+                                               let tx = crate::transaction::Transaction::new(
+                                                   pool_addr.clone(), miner.clone(), net_amount, "VLT".to_string(), current_nonce, tx_fee
+                                               );
+                                               if let Some(pk) = &server_wallet.lock().unwrap().private_key {
+                                                  use k256::ecdsa::signature::Signer;
+                                                  let signature: k256::ecdsa::Signature = pk.sign(&tx.get_hash());
+                                                  let mut signed_tx = tx.clone();
+                                                  signed_tx.signature = hex::encode(signature.to_bytes());
+                                                  chain_lock.pending_transactions.push(signed_tx);
+                                               }
+                                          }
+                                      }
+                                      // PPLNS: DO NOT CLEAR SHARES. They are valid for future blocks until they fall out of window.
+                                      // shares_lock.clear(); 
+                                  }
                                  } // Close total_shares > 0.0
                                  chain_lock.save();
                                  return Some(serde_json::json!(true));
