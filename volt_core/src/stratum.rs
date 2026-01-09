@@ -603,7 +603,7 @@ fn process_rpc_request(
                             // Stratum usually expects a bool result for submit.
                             return Some(serde_json::json!(false));
                         }
-                    }
+
                 }
             }
             Some(serde_json::json!(false))
