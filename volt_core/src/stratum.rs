@@ -295,36 +295,9 @@ impl StratumServer {
                                 handle_client(stream, chain, mode, shares, wallet, job_source, node_ref);
                             }
                             
-                            // VarDiff Logic
-                        let now = std::time::Instant::now();
-                        let time_since_last = now.duration_since(last_share_time).as_secs_f64();
-                        last_share_time = now;
-
-                        let mut new_diff = current_vardiff;
-                        if time_since_last < target_share_time * (1.0 - variance) {
-                             // Too Fast -> Increase Difficulty
-                             new_diff *= 2.0;
-                        } else if time_since_last > target_share_time * (1.0 + variance) {
-                             // Too Slow -> Decrease Difficulty
-                             new_diff /= 2.0;
-                        }
-                        
-                        // Bounds Check
-                        if new_diff < 0.001 { new_diff = 0.001; }
-                        if new_diff > 1.0 { new_diff = 1.0; } // Don't go too crazy on single CPU
-
-                        if (new_diff - current_vardiff).abs() > 0.0001 {
-                             current_vardiff = new_diff;
-                             *current_vardiff_ref.lock().unwrap() = current_vardiff;
-                             println!("[VarDiff] Retargeting Miner {} to Diff={:.4} (Rate={:.2}s)", session_miner_addr.lock().unwrap(), current_vardiff, time_since_last);
-                             
-                             let notify = serde_json::json!({
-                                 "id": null,
-                                 "method": "mining.set_difficulty",
-                                 "params": [current_vardiff]
-                             });
-                             let _ = stream_writer_resp.write_all((notify.to_string() + "\n").as_bytes());
-                        }
+                            // Connection Closed - Decrement
+                            active_conns_inner.fetch_sub(1, Ordering::Relaxed);
+                        });
 
                         // ... Existing Loop ...
                         // Connection Closed - Decrement
@@ -433,7 +406,8 @@ fn process_rpc_request(
     prev_job_id_ref: &Arc<Mutex<String>>, // Added: Previous Job ID
     prev_block_template_ref: &Arc<Mutex<Option<crate::block::Block>>>, // Added: Previous Template
     submitted_nonces: &mut HashSet<(String, u32)>, // Added: Duplicate Share Tracker
-    node: &Arc<crate::node::Node> // Added: P2P Integration
+    node: &Arc<crate::node::Node>, // Added: P2P Integration
+    current_vardiff: f64 // Added: Dynamic Difficulty for validation
 ) -> Option<serde_json::Value> {
     
     match req.method.as_str() {
@@ -913,9 +887,49 @@ fn handle_client(
     loop {
         line.clear();
         if reader.read_line(&mut line).unwrap_or(0) == 0 { break; }
+        
+        // VarDiff Logic (Run on every message receipt for simplicity, or we can gate it)
+        // Check if message is 'mining.submit' to be accurate? 
+        // For strict VarDiff, we check strictly on 'share submission'.
+        // But checking rate of 'messages' is rough proxy.
+        // Let's filter for "mining.submit" inside process_rpc_request?
+        // No, we want to control Diff strictly.
+        // Let's perform checking HERE, but only act if it's a SHARE (mining.submit).
+        // Parsing line twice is cheap.
+        if line.contains("mining.submit") {
+             let now = std::time::Instant::now();
+             let time_since_last = now.duration_since(last_share_time).as_secs_f64();
+             last_share_time = now;
+
+             let mut new_diff = current_vardiff;
+             if time_since_last < target_share_time * (1.0 - variance) {
+                  // Too Fast -> Increase Difficulty
+                  new_diff *= 2.0;
+             } else if time_since_last > target_share_time * (1.0 + variance) {
+                  // Too Slow -> Decrease Difficulty
+                  new_diff /= 2.0;
+             }
+             
+             // Bounds Check
+             if new_diff < 0.001 { new_diff = 0.001; }
+             if new_diff > 1.0 { new_diff = 1.0; } 
+
+             if (new_diff - current_vardiff).abs() > 0.0001 {
+                  current_vardiff = new_diff;
+                  *current_vardiff_ref.lock().unwrap() = current_vardiff;
+                  println!("[VarDiff] Retargeting Miner {} to Diff={:.4} (Rate={:.2}s)", session_miner_addr.lock().unwrap(), current_vardiff, time_since_last);
+                  
+                  let notify = serde_json::json!({
+                      "id": null,
+                      "method": "mining.set_difficulty",
+                      "params": [current_vardiff]
+                  });
+                  let _ = stream_writer_resp.write_all((notify.to_string() + "\n").as_bytes());
+             }
+        }
         if let Ok(req) = serde_json::from_str::<RpcRequest>(&line) {
             let res = process_rpc_request(req.clone(), &chain, &mode_ref, &shares_ref, &wallet_ref, &session_miner_addr, 
-                &current_block_template, &is_authorized, &last_notified_height, &extra_nonce_1, &last_job_id, &prev_job_id, &prev_block_template, &mut submitted_nonces, &node); // Passed node
+                &current_block_template, &is_authorized, &last_notified_height, &extra_nonce_1, &last_job_id, &prev_job_id, &prev_block_template, &mut submitted_nonces, &node, current_vardiff);
             
             if let Some(val) = res {
                 // FIX: Send Explicit Difficulty Notification BEFORE Response
