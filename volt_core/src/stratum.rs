@@ -372,9 +372,10 @@ fn process_rpc_request(
     match req.method.as_str() {
         "mining.subscribe" => {
             let en1 = extra_nonce_1_ref.lock().unwrap().clone();
-            // Send Diff 1 immediately
+            // Valid Stratum Response: [[ ["mining.set_difficulty", "id1"], ["mining.notify", "id2"] ], Extranonce1, Extranonce2_Size]
+            // We use Unique Strings for IDs to prevent confusion with difficulty values.
             Some(serde_json::json!([
-                [ ["mining.set_difficulty", "1"], ["mining.notify", "1"] ],
+                [ ["mining.set_difficulty", "sd"], ["mining.notify", "sn"] ],
                 en1, 4
             ]))
         },
