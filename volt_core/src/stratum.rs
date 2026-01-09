@@ -56,8 +56,8 @@ fn create_mining_notify(
     // 1. Previous Hash (Send as-is / Big Endian from DB)
     // Stratum miners typically expect BE string and reverse it themselves for the header.
     // If we send LE, they reverse to BE -> Mismatch.
-    let prev = hex::decode(&next_block.previous_hash).unwrap_or(vec![0;32]);
-    let _prev_hex = hex::encode(prev); // Unused warning fix
+    // let prev = hex::decode(&next_block.previous_hash).unwrap_or(vec![0;32]);
+    // let _prev_hex = hex::encode(prev); // Unused warning fix
      
     // 2. Coinbase Part 1
     // Height (LE) -> Pushed as hex
@@ -614,7 +614,7 @@ fn process_rpc_request(
                             
                             s_lock.push(crate::stratum::Share { // Fully qualified just in case
                                 miner: session_miner_addr.lock().unwrap().clone(),
-                                difficulty: 0.001, 
+                                difficulty: 0.0001, 
                                 timestamp: now,
                             });
                             return Some(serde_json::json!(true));
@@ -705,17 +705,9 @@ fn handle_client(
             
             if let Some(val) = res {
                 // FIX: Send Explicit Difficulty Notification BEFORE Response
-                if req.method == "mining.subscribe" || req.method == "mining.authorize" {
-                    // Use Difficulty 0.0001 (Easier for CPU testing)
-                    let diff_notify = serde_json::json!({
-                        "id": null, "method": "mining.set_difficulty", "params": [0.0001]
-                    });
-                    if let Ok(s) = serde_json::to_string(&diff_notify) {
-                         let _ = stream_writer_resp.write_all((s + "\n").as_bytes());
-                         let _ = stream_writer_resp.flush();
-                    }
-                }
-
+                // (Removed duplicate block - relying on the one AFTER response or merged)
+                // Actually, let's keep the one AFTER response to ensure client state is ready.
+                
                 let resp = RpcResponse { id: req.id, result: Some(val), error: None };
                 if let Ok(s) = serde_json::to_string(&resp) {
                     let _ = stream_writer_resp.write_all((s + "\n").as_bytes());
