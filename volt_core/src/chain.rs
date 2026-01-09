@@ -603,7 +603,7 @@ impl Blockchain {
         self.state.set_balance(address, token, amount);
     }
 
-    fn create_genesis_block(&mut self) -> Block {
+    pub fn create_genesis_block(&mut self) -> Block {
         // Fair Launch Genesis: No Premine
         // We create a purely symbolic Genesis Block.
         
