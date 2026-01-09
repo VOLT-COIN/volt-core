@@ -56,8 +56,10 @@ impl P2P {
                 let mut line = String::new();
 
                 loop {
+                    // DoS Protection: Limit line length to 10KB
+                    let mut limited_reader = reader.take(10_240); 
                     tokio::select! {
-                        result = tokio::time::timeout(std::time::Duration::from_secs(30), reader.read_line(&mut line)) => {
+                        result = tokio::time::timeout(std::time::Duration::from_secs(30), limited_reader.read_line(&mut line)) => {
                             let result = match result {
                                 Ok(res) => res,
                                 Err(_) => {

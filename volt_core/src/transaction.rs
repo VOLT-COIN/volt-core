@@ -136,27 +136,10 @@ impl Transaction {
     }
 
     pub fn calculate_hash(&self) -> String {
-        // Deterministic Hashing for Cross-Platform Signing (JS <-> Rust)
-        // Including price and tx_type to secure DEX orders
-        let payload = format!(
-            "{}:{}:{}:{}:{}:{}:{}:{}:{}:{}",
-            self.version, // Include version in hash
-            self.sender,
-            self.receiver,
-            self.amount,
-            self.nonce,
-            self.token,
-            self.timestamp,
-            self.price,
-            self.tx_type,
-            self.fee // Fix: Include Fee in Hash to preventing tampering
-        );
-        
-        use sha2::{Sha256, Digest};
-        let mut hasher = Sha256::new();
-        hasher.update(payload);
-        let result = hasher.finalize();
-        hex::encode(result)
+        // MATCHING LOGIC: Use get_hash() (Binary Serialization) as the single source of truth.
+        // This ensures the TxID matches what is signed/verified.
+        let bytes = self.get_hash();
+        hex::encode(bytes)
     }
 
     pub fn new_burn(sender: String, token: String, amount: u64, nonce: u64) -> Self {
