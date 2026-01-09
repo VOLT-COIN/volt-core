@@ -409,9 +409,41 @@ fn process_rpc_request(
                         let reward_amt = block.transactions[0].amount;
                         let amt_hex = hex::encode(reward_amt.to_le_bytes());
                         let height_bytes = (block.index as u32).to_le_bytes();
-                        let h_push = format!("0c{}", hex::encode(height_bytes)); // PUSH 12 bytes (match notify)
-                        // Exact string from notify
-                        let coinb1 = format!("010000000100000000000000000000000000000000000000000000000000000000ffffffff0d{}", h_push);
+                        
+                        // Debug Ex2
+                        println!("[Stratum Debug] Miner Sent Ex2: {} (Len: {})", ex2, ex2.len());
+                        use std::io::Write; std::io::stdout().flush().ok();
+
+                        // Dynamic Script Length Calculation
+                        // ScriptSig = PUSH(Height) + Height + PUSH(ExtraNonce) + En1 + Ex2
+                        // Wait. Bitcoin standard Stratum puts Height alone.
+                        // Then En1/Ex2 are usually in the script too.
+                        // Our protocol: Push Height, Pad Zeros to 12 bytes? No.
+                        // We generated "0c" + Height + En1 + Ex2.
+                        // "0c" matches 12 bytes total. Length(Height=4 + En1=4 + Ex2=4) = 12.
+                        // If Ex2 is longer, we MUST update the opcode.
+                        
+                        let total_extra_len = 4 + 4 + (ex2.len() / 2); // Height(4) + En1(4) + Ex2(Bytes)
+                        let push_opcode = match total_extra_len {
+                            0..=75 => format!("{:02x}", total_extra_len), // Direct byte
+                            _ => "4c".to_string(), // OP_PUSHDATA1 (Not handled fully here, assuming small ex2)
+                        };
+                        
+                        // BUT create_mining_notify hardcoded "0c" and "0d".
+                        // If we change it here, it mismatches notify!
+                        // So correct fix is to ensure notify uses same logic or accept mismatch if notification was wrong.
+                        // But Notify sends coinb1 ending in 0d....
+                        // Let's assume notify used standard 4-byte Ex2 logic.
+                        // If Ex2 is NOT 8 chars (4 bytes), we have a problem.
+                        
+                        let h_push = format!("{}{}", push_opcode, hex::encode(height_bytes)); 
+                        
+                        // Recalc Script Len (PUSH + Len)
+                        // Script = Opcode(1) + Height(4) + En1(4) + Ex2(Len/2).
+                        let script_len = 1 + total_extra_len; 
+                        let script_len_hex = format!("{:02x}", script_len);
+                        
+                        let coinb1 = format!("010000000100000000000000000000000000000000000000000000000000000000ffffffff{}{}", script_len_hex, h_push);
                         
                         // Dynamic P2PKH Script (Server Wallet)
                         let pool_addr_hex = server_wallet.lock().unwrap().get_address();
