@@ -232,7 +232,15 @@ impl ChainState {
     pub fn apply_transaction(&mut self, tx: &Transaction, block_height: u64) -> bool {
         // 1. DEBIT
         if tx.sender != "SYSTEM" {
+            // SECURITY FIX: Replay Protection
+            let current_nonce = self.get_nonce(&tx.sender);
+            if tx.nonce <= current_nonce {
+                // println!("Replay detected: {} <= {}", tx.nonce, current_nonce);
+                return false;
+            }
+
             // Determine what to debit
+
             let _fee_token = "VLT";
             
             // 1. Debit Fee (Hybrid: Try VLT first, then Token)
@@ -331,7 +339,8 @@ impl ChainState {
             };
             self.contracts.insert(contract_addr, contract);
         } else if tx.tx_type == TxType::CallContract {
-             if let Some(mut contract) = self.contracts.remove(&tx.receiver) { // Take ownership to mutate
+             // FIX: Use get_mut instead of remove to prevent deletion on error
+             if let Some(contract) = self.contracts.get_mut(&tx.receiver) {
                  // Instantiate VM
                  // Determine VM Type
                  let is_wasm = contract.bytecode.starts_with(b"\0asm");
@@ -366,7 +375,7 @@ impl ChainState {
                          }
                      }
                  }
-                 self.contracts.insert(tx.receiver.clone(), contract); // Put back
+                 // No need to insert back, get_mut updated in place
              }
         }
 
