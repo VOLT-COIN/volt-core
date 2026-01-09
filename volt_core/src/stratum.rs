@@ -14,7 +14,7 @@ struct RpcRequest {
     params: Vec<serde_json::Value>,
 }
 
-use ripemd::{Ripemd160, Digest}; // Added for P2PKH
+use ripemd::{Ripemd160, Digest as _}; // Added for P2PKH
 use crate::wallet::Wallet;
 
 
@@ -465,7 +465,7 @@ fn process_rpc_request(
                         let pub_key_bytes = hex::decode(&pool_addr_hex).unwrap_or(vec![0;33]);
 
                         use sha2::{Sha256, Digest};
-                        use ripemd::{Ripemd160, Digest as RipeDigest};
+                        use ripemd::{Ripemd160, Digest as _}; // Silence Warning
                         
                         let mut sha = Sha256::new();
                         sha.update(&pub_key_bytes);

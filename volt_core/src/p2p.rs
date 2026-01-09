@@ -82,7 +82,8 @@ impl P2P {
                                                     let peer = Peer {
                                                         id: node_id,
                                                         address: full_addr, 
-                                                        last_seen: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()
+                                                        address: full_addr, 
+                                                        last_seen: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or(std::time::Duration::from_secs(0)).as_secs()
                                                     };
                                                     
                                                     rt.lock().unwrap().add_peer(peer);

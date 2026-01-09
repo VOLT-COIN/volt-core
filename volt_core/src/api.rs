@@ -5,9 +5,9 @@ use std::thread;
 use serde::{Serialize, Deserialize};
 use serde_json::Value;
 use crate::chain::Blockchain;
-use crate::vm::WasmVM; // Unused
+// use crate::vm::WasmVM; // Unused
 use crate::wallet::Wallet;
-use crate::transaction::Transaction; // Unused
+// use crate::transaction::Transaction; // Unused
 use crate::node::Node;
 
 use crate::stratum::Share;
@@ -180,7 +180,7 @@ impl ApiServer {
 fn handle_request(
     req_str: &str,
     blockchain: Arc<Mutex<Blockchain>>,
-    mining_status: Arc<Mutex<bool>>,
+    _mining_status: Arc<Mutex<bool>>,
     wallet: Arc<Mutex<Wallet>>,
     is_locked: Arc<Mutex<bool>>,
     node: Arc<Node>,
