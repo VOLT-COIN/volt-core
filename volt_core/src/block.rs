@@ -79,14 +79,16 @@ impl Block {
         // Bitcoin Header Format (80 bytes)
         // Version (4) + PrevBlock (32) + MerkleRoot (32) + Timestamp (4) + Bits (4) + Nonce (4)
         
-        let version: u32 = self.version; 
         let mut bytes = Vec::new();
         
-        bytes.extend(&version.to_le_bytes()); // 4
-        
-        // PrevHash (32 bytes) - handle genesis "0"
+        // FIX: Add Version (4 bytes, Little Endian)
+        // Standard Bitcoin Header is 80 bytes: Version(4) + Prev(32) + Root(32) + Time(4) + Bits(4) + Nonce(4).
+        // Previously we were missing Version, causing a 76-byte header and hash mismatch with miners.
+        bytes.extend(&1u32.to_le_bytes());
+
+        // Previous Hash (32 bytes)
         let prev_hash_bytes = if self.previous_hash == "0" {
-            vec![0u8; 32]
+             vec![0u8; 32]
         } else {
              hex::decode(&self.previous_hash).unwrap_or(vec![0u8; 32])
         };
