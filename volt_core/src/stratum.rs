@@ -816,7 +816,7 @@ fn handle_client(
         if reader.read_line(&mut line).unwrap_or(0) == 0 { break; }
         if let Ok(req) = serde_json::from_str::<RpcRequest>(&line) {
             let res = process_rpc_request(req.clone(), &chain, &mode_ref, &shares_ref, &wallet_ref, &session_miner_addr, 
-                &current_block_template, &is_authorized, &last_notified_height, &extra_nonce_1, &last_job_id, &prev_job_id, &prev_block_template); // Passed new args
+                &current_block_template, &is_authorized, &last_notified_height, &extra_nonce_1, &last_job_id, &prev_job_id, &prev_block_template, &mut submitted_nonces); // Passed new args
             
             if let Some(val) = res {
                 // FIX: Send Explicit Difficulty Notification BEFORE Response
@@ -916,7 +916,7 @@ fn handle_client_ws(
                     let text = msg.to_text().unwrap_or("");
                     if let Ok(req) = serde_json::from_str::<RpcRequest>(text) {
                         let res = process_rpc_request(req.clone(), &chain, &mode_ref, &shares_ref, &wallet_ref, &session_miner_addr, 
-                            &current_block_template, &is_authorized, &last_notified_height, &extra_nonce_1, &last_job_id, &prev_job_id, &prev_block_template); // Passed new args
+                            &current_block_template, &is_authorized, &last_notified_height, &extra_nonce_1, &last_job_id, &prev_job_id, &prev_block_template, &mut submitted_nonces); // Passed new args
                         
                         if let Some(val) = res {
                             let resp = RpcResponse { id: req.id, result: Some(val), error: None };
