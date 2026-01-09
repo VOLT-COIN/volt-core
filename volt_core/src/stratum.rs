@@ -16,6 +16,7 @@ struct RpcRequest {
 
 use ripemd::{Ripemd160, Digest as _}; // Added for P2PKH
 use crate::wallet::Wallet;
+use std::collections::HashSet; // Added for Duplicate Share Check
 
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -382,7 +383,9 @@ fn process_rpc_request(
     extra_nonce_1_ref: &Arc<Mutex<String>>,
     last_job_id_ref: &Arc<Mutex<String>>, // Passed strict job id
     prev_job_id_ref: &Arc<Mutex<String>>, // Added: Previous Job ID
-    prev_block_template_ref: &Arc<Mutex<Option<crate::block::Block>>> // Added: Previous Template
+    prev_block_template_ref: &Arc<Mutex<Option<crate::block::Block>>>, // Added: Previous Template
+    submitted_nonces: &mut HashSet<(String, u32)> // Added: Duplicate Share Protection
+
 ) -> Option<serde_json::Value> {
     
     match req.method.as_str() {
@@ -427,11 +430,22 @@ fn process_rpc_request(
                      // Previous Job (Latency/Stale) - Valid for Payouts, Invalid for Block
                      target_template = prev_block_template_ref.lock().unwrap().clone();
                      is_stale = true;
-                     // println!("[Stratum] Processing Stale Share for Job: {}", jid);
+                     // println!("[Stratum] Processing Stale Share for Job: {} (Prev Job)", jid);
                 } else {
                     println!("[Stratum] Rejected Share (Unknown Job: {} | Curr: {})", jid, current_job);
                     return Some(serde_json::json!(false));
                 }
+
+                // Check Duplicate Share
+                // Nonce is explicitly parsed later, but we need it here for the check.
+                if let Ok(nonce_val) = u32::from_str_radix(nonce_hex, 16) {
+                    if submitted_nonces.contains(&(jid.to_string(), nonce_val)) {
+                         println!("[Stratum] Rejected Duplicate Share: Job {} Nonce {:x}", jid, nonce_val);
+                         return Some(serde_json::json!(false));
+                    }
+                    submitted_nonces.insert((jid.to_string(), nonce_val));
+                }
+
 
                 if let Some(block_template) = target_template {
                     // Reconstruct Block
@@ -464,23 +478,9 @@ fn process_rpc_request(
                         
                         // Dynamic P2PKH Script (Use ADDRESS FROM BLOCK, not Wallet State)
                         // This ensures that if the wallet changed, we still validate old shares correctly.
-                        let pool_addr_hex = &block.transactions[0].sender; // We use 'sender' field for P2PKH public key in Coinbase?
-                        // Wait, Coinbase doesn't have a sender usually ("SYSTEM"). 
-                        // The Payout Script is in the OUTPUT (Coinbase has 1 Input, 1 Output).
-                        // The Output is constructed in 'coinb2'.
-                        // We need the PUBKEY HASH that was used.
-                        // In create_mining_notify, we derived it from pool_addr_hex.
-                        // In `start()`: `pool_addr = wallet.get_address()` (Hex PubKey).
-                        // So `receiver` should be the Hex Pubkey.
-                        
+                        // The 'sender' field for coinbase transactions is "SYSTEM".
+                        // The 'receiver' field for coinbase transactions is the pool's public key (hex).
                         let pool_addr_from_template = &block.transactions[0].receiver;
-                        // But wait, our 'receiver' field stores the ADDRESS string (e.g. "1A1z...").
-                        // We need the PUBKEY (for P2PKH script). 
-                        // Wallet::get_address returns HEX encoded PUBKEY (Compressed/Uncompressed).
-                        // Is 'receiver' the Hex Pubkey? Or Base58 Address?
-                        // In `create_mining_notify`: `pool_addr_hex` is passed. 
-                        // In `start()`: `pool_addr = wallet.get_address()` (Hex PubKey).
-                        // So `receiver` should be the Hex Pubkey.
                         
                         let pool_addr_hex = if pool_addr_from_template == "SYSTEM" || pool_addr_from_template.is_empty() {
                              // Fallback (Should not happen for valid templates)
