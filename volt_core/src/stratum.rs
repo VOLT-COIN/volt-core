@@ -66,7 +66,7 @@ fn create_mining_notify(
     let h_push = format!("04{}", hex::encode(h_bytes)); // PUSH 4 bytes (Height)
     // ScriptSig: Length(14=0x0e) + PUSH4(Height) + PUSH8(Nonces)
     // coinb1 ends with "08" (PUSH 8 bytes) so miner appending 8 bytes of nonces completes the Opcode payload.
-    let coinb1 = format!("010000000100000000000000000000000000000000000000000000000000000000ffffffff0e{}08", h_push);
+    let coinb1 = format!("01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0e{}08", h_push);
     
     // 3. Coinbase Part 2 (Payout Script)
     // Server Wallet P2PKH
