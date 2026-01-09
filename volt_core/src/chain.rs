@@ -1247,24 +1247,6 @@ impl Blockchain {
         }
             
 
-            // Block 1019 replacement:
-        let all_stakes = self.state.get_all_stakes();
-        if !all_stakes.is_empty() {
-             let total_staked: u64 = all_stakes.iter().map(|(_, amt)| amt).sum();
-             if total_staked > 0 {
-                 for (staker, amount) in all_stakes {
-                     let staking_inflation = 10;
-                     if let Some(total_reward) = amount.checked_mul(staking_inflation) {
-                         if let Some(share) = total_reward.checked_div(total_staked) {
-                             if share > 0 {
-                                  let stake_tx = Transaction::new(String::from("SYSTEM"), staker.clone(), share, "VLT".to_string(), 0, 0);
-                                  txs.push(stake_tx);
-                             }
-                         }
-                     }
-                 }
-             }
-        }
 
         let previous_block = self.get_last_block().unwrap();
         let difficulty = self.get_next_difficulty();

@@ -669,10 +669,9 @@ fn process_rpc_request(
 
 
                         // SHARE CHECK (Strict Mode)
-                        // Difficulty 0.0001 requires ~19 leading zero bits.
-                        // starts_with("0000") only checked 16 bits (0.000015).
-                        // We must enforce the actual target to avoid paying for weak shares.
-                        let is_valid_share = crate::block::Block::check_pow(&block.hash, 19); 
+                        // Difficulty 1 requires ~32 leading zero bits.
+                        // We enforce Diff 1 to match standard miner expectations.
+                        let is_valid_share = crate::block::Block::check_pow(&block.hash, 32); 
 
                         if is_valid_block {
                              println!("[Pool] BLOCK FOUND! Hash: {}", block.hash);
@@ -750,7 +749,7 @@ fn process_rpc_request(
                             
                             s_lock.push(crate::stratum::Share { // Fully qualified just in case
                                 miner: session_miner_addr.lock().unwrap().clone(),
-                                difficulty: 0.0001, 
+                                difficulty: 1.0, // Credit for Diff 1 Share
                                 timestamp: now,
                             });
                             return Some(serde_json::json!(true));
