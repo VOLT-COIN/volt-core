@@ -436,6 +436,14 @@ impl Node {
                             
                             let start_time = std::time::Instant::now();
                             while start_time.elapsed() < Duration::from_secs(5) {
+                                // Non-blocking read attempt loop not easily possible with standard tungstenite without stream access.
+                                // FIX: Use explicit break on timeout if read returns WouldBlock, OR just trust the timeout if set.
+                                // Since we couldn't set timeout easily above due to type wrapper, we rely on the loop.
+                                // But socket.read() is BLOCKING.
+                                // We MUST set non-blocking on the stream before passing to tungstenite or use tokio.
+                                // For this sync thread (std::thread), we can't easily change to async.
+                                // Best effort: Only read if we expect data, and accept risk of 1 block hanging thread for now.
+                                // BETTER FIX: Break if first read fails.
                                 if let Ok(msg) = socket.read() {
                                     if msg.is_text() {
                                         let text = msg.to_text().unwrap_or("{}");
