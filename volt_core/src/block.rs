@@ -123,7 +123,11 @@ impl Block {
         hasher2.update(res1);
         let res2 = hasher2.finalize();
         
-        hex::encode(res2)
+        // Bitcoin Hash is Little Endian (Reversed)
+        let mut hash_bytes = res2.to_vec();
+        hash_bytes.reverse();
+        
+        hex::encode(hash_bytes)
     }
 
     pub fn get_header_hex(&self) -> String {
