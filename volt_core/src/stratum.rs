@@ -632,10 +632,31 @@ fn process_rpc_request(
                         // If block.difficulty changes, this code BREAKS.
                         // I will add a dynamic check based on difficulty.
                         
-                        let required_zeros = if block.difficulty == 0x1d00ffff { 4 } else { 4 }; // 4 bytes = 8 hex chars
-                        // Logic: check_pow counts BITS.
-                        // 8 hex chars = 32 bits.
-                        let is_valid_block = crate::block::Block::check_pow(&block.hash, 32); // 32 bits = 8 hex zeros
+                        // FIX: Dynamic Block Difficulty Check
+                        // Decode Compact Bits (e.g., 0x1d00ffff) to approximate required zero bits.
+                        // 0x1d00ffff -> Diff 1 -> ~32 bits (8 hex zeros)
+                        // 0x207fffff -> Diff Min -> ~0 bits
+                        // Formula: 8 * (0x1d - (bits >> 24))
+                        // Exp = bits >> 24.
+                        // Standard (0x1d) = 29 bytes. 32 - 29 = 3 bytes (24 bits) + mantissa adjustment?
+                        // Let's use the same logic as chain.rs approx or better.
+                        // Chain requires "0" * 4 for diff 1? No, chain requires prefix.
+                        
+                        let diff_bits = block.difficulty;
+                        let exp = (diff_bits >> 24) & 0xff;
+                        let required_zeros_bits = if exp <= 0x1d {
+                             // Harder than or equal to Diff 1
+                             // 0x1d = 32 bits (approx)
+                             // 0x1c = 40 bits
+                             32 + (0x1d - exp) * 8
+                        } else {
+                             // Easier (e.g. 0x1f, 0x20)
+                             if exp >= 0x20 { 0 } else { 
+                                 32.saturating_sub((exp - 0x1d) * 8)
+                             }
+                        };
+                        
+                        let is_valid_block = crate::block::Block::check_pow(&block.hash, required_zeros_bits);
 
 
                         // SHARE CHECK (Strict Mode)
