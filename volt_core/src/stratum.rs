@@ -595,18 +595,11 @@ fn process_rpc_request(
                                      for s in shares_lock.iter() {
                                          *payouts.entry(s.miner.clone()).or_insert(0.0) += s.difficulty * reward_per_share;
                                      }
-                                     for (miner, amount) in payouts {
+                                     // FIX: Iterate by reference to avoid moving 'payouts'
+                                     for (_miner, _amount) in &payouts {
                                          // If stale, we might reduce reward? For PPLNS, usually full credit.
                                          // But WE CANNOT SUBMIT STALE BLOCK TO CHAIN.
-                                         if is_stale { continue; } // Don't submit txs if we are not submitting block?
-                                         // Wait. This block looks valid PoW.
-                                         // If is_stale is true, it means this block is built on OLD previous hash (likely).
-                                         // So chain.submit_block() will reject it as "Hash mismatch" or "Not tip".
-                                         // So "submit_block" check handles the "Stale Block" logic correctly.
-                                         // We only need to worry about Payouts?
-                                         // Actually, if submit_block fails, we don't pay.
-                                         // So if IS_STALE, we shouldn't even try to submit block, 
-                                         // BUT we should accept the SHARE (0.0001 diff) for future payouts.
+                                         if is_stale { continue; } 
                                      } 
                                      if is_stale {
                                           println!("[Stratum] Stale Block - Valid PoW but old parent. Submitting as Share only.");
@@ -614,7 +607,7 @@ fn process_rpc_request(
                                           // Logic continues...
                                           let pool_addr = server_wallet.lock().unwrap().get_address();
                                           let mut current_nonce = chain_lock.state.get_nonce(&pool_addr);
-                                     for (miner, amount) in payouts {
+                                     for (miner, amount) in payouts { // Consume here is fine
                                          let amount_u64 = amount as u64;
                                          let base_fee = 100_000;
                                          let percentage_fee = (amount_u64 as f64 * 0.001) as u64;
@@ -800,8 +793,10 @@ fn handle_client_ws(
 
     let session_miner_addr = Arc::new(Mutex::new("SYSTEM_POOL".to_string()));
     let current_block_template = Arc::new(Mutex::new(None::<crate::block::Block>));
+    let prev_block_template = Arc::new(Mutex::new(None::<crate::block::Block>)); // Added for Stale Support
     let is_authorized = Arc::new(Mutex::new(false));
     let last_job_id = Arc::new(Mutex::new("".to_string()));
+    let prev_job_id = Arc::new(Mutex::new("".to_string())); // Added for Stale Support
     let last_notified_height = Arc::new(Mutex::new(0u64));
     
     // Generate Unique ExtraNonce1 (Random 4 bytes hex)
