@@ -99,7 +99,7 @@ fn main() {
     if !wallet_exists {
         // Safe to generate
         log("[Setup] No wallet found. Generating secure Mining Wallet...", &logs);
-        let (mut w, phrase) = Wallet::create_with_mnemonic();
+        let (w, phrase) = Wallet::create_with_mnemonic();
         // Save with a default password so it persists.
         w.save_encrypted("volt_node_auto"); 
         

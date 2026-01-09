@@ -436,21 +436,16 @@ fn process_rpc_request(
                 let current_job = last_job_id_ref.lock().unwrap().clone();
                 let prev_job = prev_job_id_ref.lock().unwrap().clone();
                 
-                let mut target_template: Option<crate::block::Block> = None;
-                let mut is_stale = false;
-
-                if jid == current_job {
+                let (target_template, is_stale) = if jid == current_job {
                      // Current Job
-                     target_template = current_block_template.lock().unwrap().clone();
+                     (current_block_template.lock().unwrap().clone(), false)
                 } else if jid == prev_job && !prev_job.is_empty() {
                      // Previous Job (Latency/Stale) - Valid for Payouts, Invalid for Block
-                     target_template = prev_block_template_ref.lock().unwrap().clone();
-                     is_stale = true;
-                     // println!("[Stratum] Processing Stale Share for Job: {} (Prev Job)", jid);
+                     (prev_block_template_ref.lock().unwrap().clone(), true)
                 } else {
                     println!("[Stratum] Rejected Share (Unknown Job: {} | Curr: {})", jid, current_job);
                     return Some(serde_json::json!(false));
-                }
+                };
 
                 // Check Duplicate Share
                 // Nonce is explicitly parsed later, but we need it here for the check.
@@ -718,7 +713,7 @@ fn process_rpc_request(
                                          if amount_u64 > tx_fee + 1000 {
                                               current_nonce += 1;
                                               let net_amount = amount_u64 - tx_fee;
-                                              let mut tx = crate::transaction::Transaction::new(
+                                              let tx = crate::transaction::Transaction::new(
                                                   pool_addr.clone(), miner.clone(), net_amount, "VLT".to_string(), current_nonce, tx_fee
                                               );
                                               if let Some(pk) = &server_wallet.lock().unwrap().private_key {

@@ -487,7 +487,6 @@ impl Transaction {
                      btc_tx.extend(&[0u8, 0, 0, 0]);
                      
                      // Hash it
-                     use sha2::{Sha256, Digest};
                      let mut hasher = Sha256::new();
                      hasher.update(&btc_tx);
                      let res1 = hasher.finalize();
