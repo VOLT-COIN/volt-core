@@ -672,9 +672,10 @@ fn process_rpc_request(
                              println!("[Pool] BLOCK FOUND! Hash: {}", block.hash);
                              let mut chain_lock = chain.lock().unwrap();
                              
-                             if is_stale {
-                                 // Do NOT submit stale block to chain (it will fail anyway).
-                                 // But we count it as a share below.
+                             // Check Staleness relative to current chain tip
+                             let tip = chain_lock.get_last_block().unwrap_or(chain_lock.create_genesis_block());
+                             if block.previous_hash != tip.hash {
+                                 println!("[Pool] Stale Block Solution (PrevHash mismatch). Submitting as Share only.");
                              } else if chain_lock.submit_block(block.clone()) {
                                  chain_lock.save();
                                  // FIX: Broadcast Mined Block to P2P Network
