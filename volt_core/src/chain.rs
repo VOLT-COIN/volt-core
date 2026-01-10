@@ -583,8 +583,8 @@ impl Blockchain {
 
             // 2. Process Transactions
             for (tx_idx, tx) in block.transactions.iter().enumerate() {
-                 // SECURITY FIX: Mandatory Signature Verification
-                 if !tx.verify() {
+                 // SECURITY FIX: Mandatory Signature Verification (Skip for SYSTEM/Coinbase)
+                 if tx.sender != "SYSTEM" && !tx.verify() {
                      return Err(format!("Invalid Transaction Signature at Block #{} Tx #{}", block.index, tx_idx));
                  }
 
