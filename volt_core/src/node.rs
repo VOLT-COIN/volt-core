@@ -320,9 +320,10 @@ impl Node {
                                         }
                                     },
                                     Message::Chain(remote_chain) => {
-                                        // println!("[P2P] Received Chain Data (Count: {})", remote_chain.len());
+                                        println!("[P2P] Received Chain Data (Count: {}). Head: {:?}", remote_chain.len(), remote_chain.first().map(|b| b.index));
                                         let mut chain = chain_inner.lock().unwrap();
                                         if let Some(first) = remote_chain.first() {
+                                            println!("[P2P] Processing Chain/Chunk starting at #{}", first.index);
                                             if first.index == 0 {
                                                 // Full Chain / Reorg Candidate
                                                 if chain.attempt_chain_replacement(remote_chain) {
