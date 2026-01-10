@@ -655,6 +655,10 @@ impl Blockchain {
         // Use Testnet Minimum Difficulty 0x207fffff for Easy Mining/Testing
         let mut genesis_block = Block::new(0, String::from("0000000000000000000000000000000000000000000000000000000000000000"), vec![genesis_msg], 0x207fffff, 0);
         
+        // FIX: Override Block::new() dynamic values to force STATIC GENESIS
+        genesis_block.proof_of_work = 0; // Deterministic Nonce
+        genesis_block.timestamp = timestamp; // Deterministic Timestamp
+        
         // FORCE STATIC HASH
         // We let it calculate normally, but since inputs are static, output is static.
         genesis_block.hash = genesis_block.calculate_hash();
