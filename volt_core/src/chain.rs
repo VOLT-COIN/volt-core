@@ -409,17 +409,31 @@ impl Blockchain {
             db, 
         };
 
-        let wipe_db = false;
+        let mut wipe_db = false;
 
         // Clone DB reference to avoid borrow conflict with mutable `create_genesis_block`
         if let Some(db) = blockchain.db.clone() {
             // Load Tip
             match db.get_last_block() {
                 Ok(Some(last_block)) => {
-                    // 1. Genesis Check (Lazy - Check height 0 if needed, usually we trust DB)
-                    // For now, simpler: Just load tip.
-                    blockchain.tip = Some(last_block);
-                    println!("[Core] Loaded Chain Tip from DB. Height: {}", blockchain.get_height());
+                    // Check if Genesis matches new Static Consensus
+                    if let Ok(Some(existing_genesis)) = db.get_block(0) {
+                        let expected_genesis = blockchain.create_genesis_block();
+                        if existing_genesis.hash != expected_genesis.hash {
+                             println!("[Core] CRITICAL: Genesis Mismatch detected!");
+                             println!("[Core] DB Genesis: {}", existing_genesis.hash);
+                             println!("[Core] New Consensus: {}", expected_genesis.hash);
+                             println!("[Core] Initiating Auto-Wipe to upgrade chain...");
+                             wipe_db = true;
+                        } else {
+                            // Valid Chain
+                            blockchain.tip = Some(last_block);
+                            println!("[Core] Loaded Chain Tip from DB. Height: {}", blockchain.get_height());
+                        }
+                    } else {
+                        // Weird state: Has tip but no genesis? Wipe.
+                        wipe_db = true;
+                    }
                 },
                 _ => {
                     // Empty DB or Error -> Initialize Genesis
@@ -434,10 +448,10 @@ impl Blockchain {
             }
         }
         
-        
         if wipe_db {
              // 1. Drop the DB connection to release file locks
              blockchain.db = None;
+             blockchain.state.db = None; // Important: Drop state reference too
              
              // 2. Delete the DB directory
              let path = std::path::Path::new("volt.db");
@@ -452,10 +466,16 @@ impl Blockchain {
              }
              
              // 3. Re-initialize DB
-             blockchain.db = Database::new("volt.db").ok().map(Arc::new);
+             let new_db = Database::new("volt.db").ok().map(Arc::new);
+             blockchain.db = new_db.clone();
+             blockchain.state = ChainState::new(new_db);
              
              // 4. Create correct Genesis
-             blockchain.create_genesis_block();
+             let genesis = blockchain.create_genesis_block();
+             if let Some(db) = &blockchain.db {
+                 let _ = db.save_block(&genesis);
+             }
+             blockchain.tip = Some(genesis);
         }
 
         blockchain
