@@ -728,16 +728,11 @@ fn process_rpc_request(
                                  let fee = 0.0;
                                  let distributable = total_reward - fee;
                                  let shares_lock = shares_ref.lock().unwrap();
-                                  // PPLNS Implementation: Pay Per Last N Shares
-                                  let pplns_window = 2000;
-                                  // We take the last N shares. Since shares are pushed to the end, we reverse or take from end.
-                                  // Taking from end: skip (len - N) if len > N.
-                                  // Or simpler: iter().rev().take(N)
-                                  
-                                  let shares_in_window: Vec<_> = shares_lock.iter().rev().take(pplns_window).collect();
+                                  // REVERT TO PROP: Use all shares in list
+                                  let shares_in_window: Vec<_> = shares_lock.iter().collect(); // Use ALL shares
                                   let total_shares_window: f64 = shares_in_window.iter().map(|s| s.difficulty).sum();
                                   
-                                  println!("[PPLNS Debug] Shares in Window: {}, Total Diff: {:.4}, Distributable: {:.4}", shares_in_window.len(), total_shares_window, distributable);
+                                  println!("[PROP Debug] Shares: {}, Total Diff: {:.4}, Distributable: {:.4}", shares_in_window.len(), total_shares_window, distributable);
 
                                   if total_shares_window > 0.0 {
                                       let reward_per_share = distributable / total_shares_window;
@@ -802,8 +797,8 @@ fn process_rpc_request(
                                                 }
                                           }
                                       }
-                                      // PPLNS: DO NOT CLEAR SHARES. They are valid for future blocks until they fall out of window.
-                                      // shares_lock.clear(); 
+                                      // PROP: CLEAR SHARES after payout.
+                                      shares_lock.clear(); 
                                   }
                                  } // Close total_shares > 0.0
                                  chain_lock.save();
