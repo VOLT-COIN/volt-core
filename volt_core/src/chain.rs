@@ -1239,21 +1239,12 @@ impl Blockchain {
         }
     }
     
-    pub fn get_mining_candidate(&self, miner_address: String) -> Block {
+    pub fn get_mining_candidate(&mut self, miner_address: String) -> Block {
         let _height = self.get_height();
         let mut reward = self.calculate_reward(_height);
         
-        // Clone pending pool
-        let mut txs = self.pending_transactions.clone();
-
-        // ---------------------------------------------------------
-        // BITCOIN-LIKE FEE MARKET
-        // Prioritize transactions with higher fees (Fee Density)
-        // ---------------------------------------------------------
-        
-        // CLEANUP: Filter out Invalid Signatures BEFORE including in block
-        // This purges the "Zombie" PPLNS transactions causing the infinite error loop.
-        txs.retain(|tx| {
+        // CLEANUP: Filter out Invalid Signatures IN PLACE (Permanently remove from Mempool)
+        self.pending_transactions.retain(|tx| {
             if tx.sender == "SYSTEM" { return true; }
             if !tx.verify() {
                  println!("[Mempool] 🗑️ Discarding Invalid Tx: {}", hex::encode(tx.get_hash()));
@@ -1262,10 +1253,13 @@ impl Blockchain {
             true
         });
 
-        // Also update the global pending list to reflect this cleanup?
-        // Sadly 'txs' here is a clone. We need to lock and clear the main list?
-        // For now, this ensures the BLOCK TEMPLATE is clean, which allows the block to be accepted.
-        // We will do a lazy cleanup on the main list later if needed, but this unblocks the chain.
+        // Use the cleaned list
+        let mut txs = self.pending_transactions.clone();
+
+        // ---------------------------------------------------------
+        // BITCOIN-LIKE FEE MARKET
+        // Prioritize transactions with higher fees (Fee Density)
+        // ---------------------------------------------------------
         
         txs.sort_by(|a, b| b.fee.cmp(&a.fee));
 
