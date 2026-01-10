@@ -1103,6 +1103,7 @@ fn handle_client_ws(
                             }
                             // FIX: Send Explicit Difficulty Notification after Subscribe
                             if req.method == "mining.subscribe" {
+                                let diff_notify = serde_json::json!({
                                     "id": null, "method": "mining.set_difficulty", "params": [0.5]
                                 });
                                 if let Ok(s) = serde_json::to_string(&diff_notify) {
