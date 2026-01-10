@@ -51,60 +51,13 @@ impl Node {
 
     pub fn broadcast_block(&self, block: Block) {
         let peers = self.peers.lock().unwrap().clone();
-        let msg = Message::NewBlock(block.clone());
+        let msg = Message::NewBlock(block);
         let json = serde_json::to_string(&msg).unwrap();
         
-        // Capture Chain Reference
-        let chain_ref = self.blockchain.clone();
-
         thread::spawn(move || {
             for peer in peers {
-                if peer.starts_with("ws://") || peer.starts_with("wss://") {
-                    if let Ok((mut socket, _)) = tungstenite::connect(&peer) {
-                         // Send NewBlock
-                         let _ = socket.send(tungstenite::Message::Text(json.clone()));
-                         
-                         // FIX: Listen for potential Sync Requests (GetBlocks) for 10s
-                         let start = std::time::Instant::now();
-                         while start.elapsed() < std::time::Duration::from_secs(10) {
-                             if let Ok(msg) = socket.read() {
-                                 if msg.is_text() {
-                                     let text = msg.to_text().unwrap_or("{}");
-                                     if let Ok(parsed) = serde_json::from_str::<Message>(text) {
-                                         if let Message::GetBlocks { start, limit } = parsed {
-                                             println!("[Broadcast] Serving Sync Request from {}: Start {}, Limit {}", peer, start, limit);
-                                             
-                                             let chain = chain_ref.lock().unwrap();
-                                             let height = chain.get_height() as usize;
-                                             
-                                             if start < height {
-                                                 let mut chunk = Vec::new();
-                                                 let end = std::cmp::min(start + limit, height);
-                                                 
-                                                 if let Some(ref db) = chain.db {
-                                                      for i in start..end {
-                                                          if let Ok(Some(block)) = db.get_block(i as u64) {
-                                                              chunk.push(block);
-                                                          }
-                                                      }
-                                                 }
-                                                 
-                                                 let resp = Message::Chain(chunk);
-                                                 let resp_json = serde_json::to_string(&resp).unwrap_or_default();
-                                                 let _ = socket.send(tungstenite::Message::Text(resp_json));
-                                             }
-                                         }
-                                     }
-                                 }
-                             } else { break; }
-                         }
-                    }
-                } else {
-                    if let Ok(mut stream) = TcpStream::connect(&peer) {
-                        let _ = stream.write_all(json.as_bytes());
-                        // Listen for TCP response? (Similar logic needed if TCP peers exist)
-                        // For now focusing on WSS which is the main transport.
-                    }
+                if let Ok(mut stream) = TcpStream::connect(&peer) {
+                    let _ = stream.write_all(json.as_bytes());
                 }
             }
         });
@@ -225,20 +178,16 @@ impl Node {
                                         let last_index = last_block.as_ref().map(|b| b.index).unwrap_or(0);
 
                                         if block.index > last_index + 1 {
-                                            println!("[P2P] Received Future Block #{} (Head: {}). Requesting Sync from #{}.", block.index, last_index, last_index + 1);
-                                            // FIX: Don't ask for full chain (GetChain starts at 0). Ask for new blocks.
-                                            let msg = Message::GetBlocks { start: (last_index + 1) as usize, limit: 500 };
-                                            Ok(Some(msg))
+                                            println!("[P2P] Received Future Block #{} (Head: {}). Requesting Sync.", block.index, last_index);
+                                            Ok(Some(Message::GetChain))
                                         } else if block.index <= last_index {
-                                            println!("[P2P] Block #{} already known (Head: {}). Valid.", block.index, last_index);
+                                            println!("[P2P] Received Stale Block #{}. Ignoring.", block.index);
                                             Ok(None)
                                         } else {
                                             // Verify Linkage
                                             let last_hash = last_block.as_ref().map(|b| b.hash.clone()).unwrap_or_default();
                                             if block.previous_hash != last_hash {
-                                                 println!("[P2P] Block #{} Fork Detected (PrevHash mismatch). Requesting Chain Replacement.", block.index);
-                                                 // Here we might actually need full reorg logic, so GetChain (start 0) is safer fallback for deep forks,
-                                                 // but efficient reorgs should use HeadersFirst. valid for now.
+                                                 println!("[P2P] Block #{} Fork Detected. Requesting Sync to resolve.", block.index);
                                                  return Ok(Some(Message::GetChain));
                                             }
 
@@ -320,10 +269,9 @@ impl Node {
                                         }
                                     },
                                     Message::Chain(remote_chain) => {
-                                        println!("[P2P] Received Chain Data (Count: {}). Head: {:?}", remote_chain.len(), remote_chain.first().map(|b| b.index));
+                                        // println!("[P2P] Received Chain Data (Count: {})", remote_chain.len());
                                         let mut chain = chain_inner.lock().unwrap();
                                         if let Some(first) = remote_chain.first() {
-                                            println!("[P2P] Processing Chain/Chunk starting at #{}", first.index);
                                             if first.index == 0 {
                                                 // Full Chain / Reorg Candidate
                                                 if chain.attempt_chain_replacement(remote_chain) {
@@ -362,8 +310,7 @@ impl Node {
                                         let all = chain.get_all_blocks();
                                         // Find start block
                                         let start_idx = all.iter().position(|b| b.hash == locator).map(|i| i + 1).unwrap_or(0);
-                                        // FIX: Reduce batch size from 2000 to 500 to preventtimeouts on large payloads (4MB -> 1MB)
-                                        let end_idx = std::cmp::min(start_idx + 500, all.len());
+                                        let end_idx = std::cmp::min(start_idx + 2000, all.len());
                                         
                                         let headers = if start_idx < all.len() {
                                              // Strip Transactions for "Headers" (Lightweight)
@@ -538,129 +485,64 @@ impl Node {
                     let peers_inner = peers_client.clone();
 
                     thread::spawn(move || {
-                        if peer_addr.starts_with("ws://") || peer_addr.starts_with("wss://") {
-                            let ws_url = peer_addr.clone(); // Already has protocol
-                            if let Ok((mut socket, _)) = tungstenite::connect(ws_url) {
-                                // Handshake: GetPeers
-                                let _ = socket.send(tungstenite::Message::Text(serde_json::to_string(&Message::GetPeers).unwrap_or_default()));
-                                
-                                // Header-First Sync: Ask for headers first
-                                let (_my_height, locator) = {
-                                    let c = chain_inner.lock().unwrap();
-                                    let h = c.get_height() as usize;
-                                    let hash = c.get_last_block().map(|b| b.hash).unwrap_or("0".to_string());
-                                    (h, hash)
-                                };
-    
-                                let msg = Message::GetHeaders { locator };
-                                 
-                                if let Ok(json) = serde_json::to_string(&msg) {
-                                    let _ = socket.send(tungstenite::Message::Text(json));
-                                }
-                                
-                                // Listen for Response
-                                let start_time = std::time::Instant::now();
-                                while start_time.elapsed() < Duration::from_secs(5) {
-                                    if let Ok(msg) = socket.read() {
-                                        if msg.is_text() {
-                                            let text = msg.to_text().unwrap_or("{}");
-                                            if let Ok(parsed) = serde_json::from_str::<Message>(text) {
-                                                 match parsed {
-                                                    Message::Peers(new_p) => {
-                                                         let mut p_lock = peers_inner.lock().unwrap();
-                                                         for np in new_p {
-                                                             if !p_lock.contains(&np) { p_lock.push(np); }
-                                                         }
-                                                    },
-                                                    Message::Chain(chunk) => {
-                                                         let mut c = chain_inner.lock().unwrap();
-                                                         if let Some(first) = chunk.first() {
-                                                             if first.index == 0 { c.attempt_chain_replacement(chunk); }
-                                                             else { c.handle_sync_chunk(chunk); }
-                                                         }
-                                                    },
-                                                    Message::Headers(headers) => {
-                                                        if headers.is_empty() {
-                                                             println!("[Sync] Synced. (No new headers)");
-                                                        } else {
-                                                            println!("[Sync] Received {} Headers. Requesting Blocks...", headers.len());
-                                                            // Logic for downloading blocks...
-                                                            if let Some(first) = headers.first() {
-                                                                let start = first.index as usize;
-                                                                // FIX: Cap request at 500 blocks even if more headers received
-                                                                let limit = std::cmp::min(headers.len(), 500);
-                                                                let msg_get = Message::GetBlocks { start, limit };
-                                                                if let Ok(req_json) = serde_json::to_string(&msg_get) {
-                                                                    let _ = socket.send(tungstenite::Message::Text(req_json));
-                                                                }
-                                                            }
-                                                        }
-                                                    },
-                                                    _ => {}
-                                                 }
-                                            }
-                                        }
-                                    } else { break; }
-                                }
+                        let ws_url = format!("ws://{}", peer_addr);
+                        if let Ok((mut socket, _)) = tungstenite::connect(ws_url) {
+                            // Handshake: GetPeers
+                            let _ = socket.send(tungstenite::Message::Text(serde_json::to_string(&Message::GetPeers).unwrap_or_default()));
+                            
+                            // Header-First Sync: Ask for headers first
+                            let (_my_height, locator) = {
+                                let c = chain_inner.lock().unwrap();
+                                let h = c.get_height() as usize;
+                                let hash = c.get_last_block().map(|b| b.hash).unwrap_or("0".to_string());
+                                (h, hash)
+                            };
+
+                            let msg = Message::GetHeaders { locator };
+                             
+                            if let Ok(json) = serde_json::to_string(&msg) {
+                                let _ = socket.send(tungstenite::Message::Text(json));
                             }
-                        } else {
-                            // TCP Sync Logic
-                            if let Ok(stream) = TcpStream::connect(&peer_addr) {
-                                let mut writer = stream.try_clone().expect("Failed to clone stream");
-                                
-                                // Handshake: GetPeers
-                                let _ = writer.write_all(serde_json::to_string(&Message::GetPeers).unwrap_or_default().as_bytes());
-                                
-                                let locator = {
-                                    let c = chain_inner.lock().unwrap();
-                                    c.get_last_block().map(|b| b.hash).unwrap_or("0".to_string())
-                                };
-
-                                let msg = Message::GetHeaders { locator };
-                                if let Ok(json) = serde_json::to_string(&msg) {
-                                    let _ = writer.write_all(json.as_bytes());
-                                }
-
-                                // Read Loop
-                                // FIX: Increase timeout to 60s for slow connections/large blocks
-                                let _ = stream.set_read_timeout(Some(Duration::from_secs(60)));
-                                let mut de = serde_json::Deserializer::from_reader(&stream);
-                                while let Ok(parsed) = Message::deserialize(&mut de) {
-                                    match parsed {
-                                        Message::Peers(new_p) => {
-                                            let mut p_lock = peers_inner.lock().unwrap();
-                                            for np in new_p {
-                                                if !p_lock.contains(&np) { p_lock.push(np); }
-                                            }
-                                        },
-                                        Message::Chain(chunk) => {
-                                            let mut c = chain_inner.lock().unwrap();
-                                            if let Some(first) = chunk.first() {
-                                                if first.index == 0 { c.attempt_chain_replacement(chunk); }
-                                                else { c.handle_sync_chunk(chunk); }
-                                            }
-                                            break; // Done after chain
-                                        },
-                                        Message::Headers(headers) => {
-                                            if headers.is_empty() {
-                                                println!("[Sync] Synced (TCP). No new headers.");
-                                                break;
-                                            }
-                                            println!("[Sync] Received {} Headers via TCP. Requesting Blocks...", headers.len());
-                                            if let Some(first) = headers.first() {
-                                                let start = first.index as usize;
-                                                // FIX: Cap request at 500
-                                                let limit = std::cmp::min(headers.len(), 500);
-                                                let msg_get = Message::GetBlocks { start, limit };
-                                                let _ = writer.write_all(serde_json::to_string(&msg_get).unwrap().as_bytes());
-                                                // Continue loop to receive Chain
-                                            } else {
-                                                break;
-                                            }
-                                        },
-                                        _ => {}
+                            
+                            // Listen for Response (Short lived connection for sync step)
+                            // We wait for a few seconds to receive data then close
+                            // socket.get_mut().set_read_timeout... (Disabled for compilation if method missing on wrapper)
+                            // socket.get_mut().set_read_timeout(Some(Duration::from_secs(5))).ok();
+                            
+                            let start_time = std::time::Instant::now();
+                            while start_time.elapsed() < Duration::from_secs(5) {
+                                // Non-blocking read attempt loop not easily possible with standard tungstenite without stream access.
+                                // FIX: Use explicit break on timeout if read returns WouldBlock, OR just trust the timeout if set.
+                                // Since we couldn't set timeout easily above due to type wrapper, we rely on the loop.
+                                // But socket.read() is BLOCKING.
+                                // We MUST set non-blocking on the stream before passing to tungstenite or use tokio.
+                                // For this sync thread (std::thread), we can't easily change to async.
+                                // Best effort: Only read if we expect data, and accept risk of 1 block hanging thread for now.
+                                // BETTER FIX: Break if first read fails.
+                                if let Ok(msg) = socket.read() {
+                                    if msg.is_text() {
+                                        let text = msg.to_text().unwrap_or("{}");
+                                        if let Ok(parsed) = serde_json::from_str::<Message>(text) {
+                                             match parsed {
+                                                Message::Peers(new_p) => {
+                                                     let mut p_lock = peers_inner.lock().unwrap();
+                                                     for np in new_p {
+                                                         if !p_lock.contains(&np) { p_lock.push(np); }
+                                                     }
+                                                },
+                                                Message::Chain(chunk) => {
+                                                     let mut c = chain_inner.lock().unwrap();
+                                                     // Reuse the logic: index 0 = Full, index > 0 = Chunk
+                                                     if let Some(first) = chunk.first() {
+                                                         if first.index == 0 { c.attempt_chain_replacement(chunk); }
+                                                         else { c.handle_sync_chunk(chunk); }
+                                                     }
+                                                },
+                                                _ => {}
+                                             }
+                                        }
                                     }
-                                }
+                                } else { break; }
                             }
                         }
                     });

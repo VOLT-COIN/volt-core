@@ -6,5 +6,4 @@
 export const API_URL = import.meta.env.VITE_API_URL || "https://voltcore-node.hf.space/api/rpc";
 
 // The actual Blockchain Node URL (Target for Proxy)
-export const NODE_URL = import.meta.env.VITE_NODE_URL || "https://voltcore-node.hf.space";
-;
+export const NODE_URL = import.meta.env.VITE_NODE_URL || "https://voltcore-node.hf.space/api/rpc";

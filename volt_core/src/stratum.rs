@@ -197,10 +197,10 @@ impl StratumServer {
                 println!("[Stratum] Job Updater Thread Started");
                 
                 loop {
-                    thread::sleep(Duration::from_millis(50)); // Fast Update (was 500ms)
+                    thread::sleep(Duration::from_millis(500));
                     
                     let (h, next_block) = {
-                        let mut c = chain.lock().unwrap();
+                        let c = chain.lock().unwrap();
                         let pool_addr = wallet.lock().unwrap().get_address();
                         (c.get_height(), c.get_mining_candidate(pool_addr))
                     };
@@ -234,10 +234,6 @@ impl StratumServer {
                          }
 
                          let notify = create_mining_notify(&next_block, &job_id, &pool_addr);
-                         
-                         if next_block.transactions.len() > 1 {
-                             println!("[Stratum] Job Updated: Block #{} with {} Txs (Payouts Included)", next_block.index, next_block.transactions.len() - 1);
-                         }
                          
                          let mut state = job_state.lock().unwrap();
                          state.job_id = job_id;
@@ -302,7 +298,6 @@ impl StratumServer {
                             // Connection Closed - Decrement
                             active_conns_inner.fetch_sub(1, Ordering::Relaxed);
                         });
-
                     }
                     Err(e) => println!("Connection failed: {}", e),
                 }
@@ -406,8 +401,7 @@ fn process_rpc_request(
     prev_job_id_ref: &Arc<Mutex<String>>, // Added: Previous Job ID
     prev_block_template_ref: &Arc<Mutex<Option<crate::block::Block>>>, // Added: Previous Template
     submitted_nonces: &mut HashSet<(String, u32)>, // Added: Duplicate Share Tracker
-    node: &Arc<crate::node::Node>, // Added: P2P Integration
-    current_vardiff: f64 // Added: Dynamic Difficulty for validation
+    node: &Arc<crate::node::Node> // Added: P2P Integration
 ) -> Option<serde_json::Value> {
     
     match req.method.as_str() {
@@ -607,11 +601,6 @@ fn process_rpc_request(
                             println!("[Stratum] ERROR: Failed to parse ntime: {}", ntime_hex);
                         }
                         
-                        // block.hash = block.calculate_hash();
-                        // println!("[Stratum Debug] Reconstructed: Prev={} TimeHex={} Time={} Nonce={} Diff={} Merkle={}", 
-                        //    block.previous_hash, ntime_hex, block.timestamp, block.proof_of_work, block.difficulty, block.merkle_root);
-                        // println!("[Stratum Debug] Header Hex: {}", block.get_header_hex());
-                        
                         block.hash = block.calculate_hash();
 
 
@@ -677,45 +666,16 @@ fn process_rpc_request(
                         // SHARE CHECK (Relaxed for Testnet)
                         // Difficulty 0x207fffff requires very little work (starts with 0 bit).
                         // We set it to 1 bit to accept almost anything validly structured.
-                        // SHARE CHECK (Dynamic based on Miner's current Difficulty)
-                        // We calculate required work based on 'current_vardiff'.
-                        // Diff 1.0 ~= 32 leading zero bits.
-                        // Diff 0.01 ~= 25 leading zero bits.
-                        // Formula approximation: required_bits = 32 + log2(diff) - log2(1.0) ?
-                        // Actually, check_pow checks 'leading zero bits' against full 256-bit space?
-                        // No, block.check_pow logic is relative to bits.
-                        
-                        // Simple Logic for robustness:
-                        // If diff < 0.1, we accept 0 bits (valid header structure check only).
-                        // If diff >= 0.1, we check at least 1 bit.
-                        // If diff >= 1.0, we check standard bits.
-                        let required_share_bits = if current_vardiff < 0.1 { 0 } else { 1 };
-                        let is_valid_share = crate::block::Block::check_pow(&block.hash, required_share_bits); 
+                        let is_valid_share = crate::block::Block::check_pow(&block.hash, 1); 
 
                         if is_valid_block {
                              println!("[Pool] BLOCK FOUND! Hash: {}", block.hash);
-                             
-                             // FIX: Record the Winning Share BEFORE calculating payouts!
-                             {
-                                 let mut s_lock = shares_ref.lock().unwrap();
-                                 if s_lock.len() > 5000 { s_lock.remove(0); }
-                                 let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or(std::time::Duration::from_secs(0)).as_secs();
-                                 
-                                 s_lock.push(crate::stratum::Share { 
-                                     miner: session_miner_addr.lock().unwrap().clone(),
-                                     difficulty: current_block_template.lock().unwrap().as_ref().map(|b| b.difficulty as f64).unwrap_or(1.0), 
-                                     timestamp: now,
-                                 });
-                                 println!("[Stratum] Winning Share Recovered & Recorded.");
-                             }
-
                              let mut chain_lock = chain.lock().unwrap();
                              
                              // Check Staleness relative to current chain tip
                              let tip = chain_lock.get_last_block().unwrap_or_else(|| chain_lock.create_genesis_block());
                              if block.previous_hash != tip.hash {
-                                 // Verified: This is a valid share for PPLNS (Pool pays for it), just not for Blockchain.
-                                 println!("[Pool] Late Share (Block updated). Accepted for PPLNS.");
+                                 println!("[Pool] Stale Block Solution (PrevHash mismatch). Submitting as Share only.");
                              } else if chain_lock.submit_block(block.clone()) {
                                  chain_lock.save();
                                  // FIX: Broadcast Mined Block to P2P Network
@@ -727,89 +687,56 @@ fn process_rpc_request(
                                  let total_reward = crate::block::Block::get_block_reward(block.index) as f64; 
                                  let fee = 0.0;
                                  let distributable = total_reward - fee;
-                                 let mut shares_lock = shares_ref.lock().unwrap(); // Mutability for clear()
-                                  // REVERT TO PROP: Use all shares in list
-                                  let shares_in_window: Vec<_> = shares_lock.iter().collect(); // Use ALL shares
-                                  let total_shares_window: f64 = shares_in_window.iter().map(|s| s.difficulty).sum();
-                                  
-                                  println!("[PROP Debug] Shares: {}, Total Diff: {:.4}, Distributable: {:.4}", shares_in_window.len(), total_shares_window, distributable);
-
-                                  if total_shares_window > 0.0 {
-                                      let reward_per_share = distributable / total_shares_window;
-                                      let mut payouts: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
-                                      
-                                      for s in shares_in_window {
-                                          *payouts.entry(s.miner.clone()).or_insert(0.0) += s.difficulty * reward_per_share;
-                                      }
-                                      
-                                      println!("[PPLNS Debug] Payout Candidates: {}", payouts.len());
-                                      
-                                      // FIX: Iterate by reference to avoid moving 'payouts'
-                                      for (_miner, _amount) in &payouts {
-                                          if is_stale { continue; } 
-                                      } 
-                                      if is_stale {
-                                           println!("[Stratum] Stale Block - Valid PoW but old parent. Submitting as Share only.");
-                                      } else {
-                                           // Logic continues...
-                                           let pool_addr = server_wallet.lock().unwrap().get_address();
-                                           
-                                           // VERIFICATION: Check Pool Balance
-                                           let pool_balance = chain_lock.state.get_balance(&pool_addr, "VLT");
-                                           let total_needed: u64 = payouts.values().map(|v| *v as u64).sum();
-                                           
-                                           if pool_balance < total_needed {
-                                                println!("[PPLNS] ⚠️  WARNING: Insufficient Pool Balance!");
-                                                println!("[PPLNS] Available: {:.8} VLT, Needed: {:.8} VLT", pool_balance as f64 / 1e8, total_needed as f64 / 1e8);
-                                                println!("[PPLNS] Payouts will likely be REJECTED by the network until block rewards mature (10 blocks).");
-                                           }
-
-                                           let mut current_nonce = chain_lock.state.get_nonce(&pool_addr);
-                                           
-                                           // Check if we already have pending txs using this nonce to avoid "Existing Nonce" errors
-                                           // Simple local nonce tracking adjustment
-                                           for tx in &chain_lock.pending_transactions {
-                                                if tx.sender == pool_addr {
-                                                    if tx.nonce > current_nonce { current_nonce = tx.nonce; }
-                                                }
-                                           }
-
-                                      for (miner, amount) in payouts { // Consume here is fine
-                                          let amount_u64 = amount as u64;
-                                          let base_fee = 100_000;
-                                          let percentage_fee = (amount_u64 as f64 * 0.001) as u64;
-                                          let tx_fee = base_fee + percentage_fee;
-                                          
-                                          if amount_u64 > tx_fee + 1000 {
-                                               current_nonce += 1;
-                                               let net_amount = amount_u64 - tx_fee;
-                                               let tx = crate::transaction::Transaction::new(
-                                                   pool_addr.clone(), miner.clone(), net_amount, "VLT".to_string(), current_nonce, tx_fee
-                                               );
-                                               if let Some(pk) = &server_wallet.lock().unwrap().private_key {
-                                                  use k256::ecdsa::signature::Signer;
-                                                  let signature: k256::ecdsa::Signature = pk.sign(&tx.get_hash());
-                                                  let mut signed_tx = tx.clone();
-                                                  signed_tx.signature = hex::encode(signature.to_bytes());
-                                                  chain_lock.pending_transactions.push(signed_tx);
-                                                  
-                                                  println!("[PPLNS] Paying {:.8} VLT to Miner: {} (Tx Fee: {:.8} VLT)", net_amount as f64 / 1e8, miner, tx_fee as f64 / 1e8);
-                                                }
-                                          }
-                                      }
-                                      // PROP: CLEAR SHARES after payout.
-                                      shares_lock.clear(); 
-                                  }
+                                 let mut shares_lock = shares_ref.lock().unwrap();
+                                 let total_shares: f64 = shares_lock.iter().map(|s| s.difficulty).sum();
+                                 if total_shares > 0.0 {
+                                     let reward_per_share = distributable / total_shares;
+                                     let mut payouts: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+                                     for s in shares_lock.iter() {
+                                         *payouts.entry(s.miner.clone()).or_insert(0.0) += s.difficulty * reward_per_share;
+                                     }
+                                     // FIX: Iterate by reference to avoid moving 'payouts'
+                                     for (_miner, _amount) in &payouts {
+                                         // If stale, we might reduce reward? For PPLNS, usually full credit.
+                                         // But WE CANNOT SUBMIT STALE BLOCK TO CHAIN.
+                                         if is_stale { continue; } 
+                                     } 
+                                     if is_stale {
+                                          println!("[Stratum] Stale Block - Valid PoW but old parent. Submitting as Share only.");
+                                     } else {
+                                          // Logic continues...
+                                          let pool_addr = server_wallet.lock().unwrap().get_address();
+                                          let mut current_nonce = chain_lock.state.get_nonce(&pool_addr);
+                                     for (miner, amount) in payouts { // Consume here is fine
+                                         let amount_u64 = amount as u64;
+                                         let base_fee = 100_000;
+                                         let percentage_fee = (amount_u64 as f64 * 0.001) as u64;
+                                         let tx_fee = base_fee + percentage_fee;
+                                         if amount_u64 > tx_fee + 1000 {
+                                              current_nonce += 1;
+                                              let net_amount = amount_u64 - tx_fee;
+                                              let tx = crate::transaction::Transaction::new(
+                                                  pool_addr.clone(), miner.clone(), net_amount, "VLT".to_string(), current_nonce, tx_fee
+                                              );
+                                              if let Some(pk) = &server_wallet.lock().unwrap().private_key {
+                                                 use k256::ecdsa::signature::Signer;
+                                                 let signature: k256::ecdsa::Signature = pk.sign(&tx.get_hash());
+                                                 let mut signed_tx = tx.clone();
+                                                 signed_tx.signature = hex::encode(signature.to_bytes());
+                                                 chain_lock.pending_transactions.push(signed_tx);
+                                              }
+                                         }
+                                     }
+                                     shares_lock.clear();
+                                 }
                                  } // Close total_shares > 0.0
                                  chain_lock.save();
                                  return Some(serde_json::json!(true));
                              }
                              // If stale, we fall through to Share Accepted
                          } else if is_valid_share {
-                            // Valid Share Accepted
-                            let miner_id = session_miner_addr.lock().unwrap().clone();
-                            // Do not spam too much if we have many miners, but for local it is fine.
-                            println!("[Stratum] Share Accepted: Miner={} Diff=0.01", miner_id);
+                            // Valid Share
+                            // println!("[Stratum] Share Accepted ...");
 
                             
                             let mut s_lock = shares_ref.lock().unwrap();
@@ -818,14 +745,16 @@ fn process_rpc_request(
                             
                             s_lock.push(crate::stratum::Share { // Fully qualified just in case
                                 miner: session_miner_addr.lock().unwrap().clone(),
-                                difficulty: 0.01, // Credit for Diff 0.01 Share
+                                difficulty: 1.0, // Credit for Diff 1 Share
                                 timestamp: now,
                             });
                             return Some(serde_json::json!(true));
                         } else {
-                             println!("[Stratum] Rejected Share (Invalid PoW but accepted low diff for testing)");
-                             // For debugging, we accept even if false here? No, is_valid_share controls entrance.
-                             return Some(serde_json::json!(false));
+                            // println!("[Stratum] Rejected Share ...");
+
+                            // Return false to let miner know it was rejected? 
+                            // Stratum usually expects a bool result for submit.
+                            return Some(serde_json::json!(false));
                         }
 
                 }
@@ -873,18 +802,6 @@ fn handle_client(
     // FIX: Add duplicate share tracker
     let mut submitted_nonces = HashSet::new();
 
-    // VarDiff State
-    let mut _last_share_time = std::time::Instant::now();
-    let mut current_vardiff: f64 = 0.5; // Start Higher (was 0.01)
-    let target_share_time = 3.0; // Seconds (20 shares/min)
-    let variance = 0.40; // 40% variance allowed
-    let current_vardiff_ref = Arc::new(Mutex::new(current_vardiff));
-    
-    // NEW: Share Buffer to smooth out bursts
-    let mut share_count_buffer = 0;
-    let mut time_buffer_start = std::time::Instant::now();
-    let retarget_interval = 10; // Retarget every 10 shares
-
     // Notifier Thread
     let (block_n, prev_block_n, auth_n, last_job_n, prev_job_n, job_src_n) = (
         current_block_template.clone(), prev_block_template.clone(), is_authorized.clone(), last_job_id.clone(), prev_job_id.clone(), job_source.clone()
@@ -930,64 +847,9 @@ fn handle_client(
     loop {
         line.clear();
         if reader.read_line(&mut line).unwrap_or(0) == 0 { break; }
-        
-        // VarDiff Logic (Run on every message receipt for simplicity, or we can gate it)
-        // Check if message is 'mining.submit' to be accurate? 
-        // For strict VarDiff, we check strictly on 'share submission'.
-        // But checking rate of 'messages' is rough proxy.
-        // Let's filter for "mining.submit" inside process_rpc_request?
-        // No, we want to control Diff strictly.
-        // Let's perform checking HERE, but only act if it's a SHARE (mining.submit).
-        // Parsing line twice is cheap.
-        let mut should_notify = false;
-
-        if line.contains("mining.submit") {
-             // Buffer Shares
-             share_count_buffer += 1;
-             
-             if share_count_buffer >= retarget_interval {
-                 let now = std::time::Instant::now();
-                 let time_elapsed = now.duration_since(time_buffer_start).as_secs_f64();
-                 let avg_time_per_share = time_elapsed / share_count_buffer as f64;
-                 
-                 // Reset Buffer
-                 share_count_buffer = 0;
-                 time_buffer_start = now; // Reset timer for next batch
-
-                 let mut new_diff = current_vardiff;
-                 
-                 // Logic: Match Average Rate to Target
-                 if avg_time_per_share < target_share_time * (1.0 - variance) {
-                      // Too Fast -> Increase Difficulty
-                      new_diff *= 2.0;
-                 } else if avg_time_per_share > target_share_time * (1.0 + variance) {
-                      // Too Slow -> Decrease Difficulty
-                      new_diff /= 2.0;
-                 }
-                 
-                 // Bounds Check
-                 if new_diff < 0.001 { new_diff = 0.001; }
-                 if new_diff > 1.0 { new_diff = 1.0; } 
-
-                 if (new_diff - current_vardiff).abs() > 0.0001f64 {
-                      current_vardiff = new_diff;
-                      *current_vardiff_ref.lock().unwrap() = current_vardiff;
-                      println!("[VarDiff] Retargeting (Avg {:.2}s/share). Miner {} -> Diff={:.4}", avg_time_per_share, session_miner_addr.lock().unwrap(), current_vardiff);
-                      should_notify = true;
-                 }
-             }
-        }
-        if should_notify {
-             let notify = serde_json::json!({
-                 "id": null,
-                 "method": "mining.set_difficulty",
-                 "params": [current_vardiff]
-             });
-             let _ = stream_writer_resp.write_all((notify.to_string() + "\n").as_bytes());
-        }
         if let Ok(req) = serde_json::from_str::<RpcRequest>(&line) {
             let res = process_rpc_request(req.clone(), &chain, &mode_ref, &shares_ref, &wallet_ref, &session_miner_addr, 
-                &current_block_template, &is_authorized, &last_notified_height, &extra_nonce_1, &last_job_id, &prev_job_id, &prev_block_template, &mut submitted_nonces, &node, current_vardiff);
+                &current_block_template, &is_authorized, &last_notified_height, &extra_nonce_1, &last_job_id, &prev_job_id, &prev_block_template, &mut submitted_nonces, &node); // Passed node
             
             if let Some(val) = res {
                 // FIX: Send Explicit Difficulty Notification BEFORE Response
@@ -1003,7 +865,7 @@ fn handle_client(
                 // Double check: Send AGAIN after response just in case miner ignored the first one
                 if req.method == "mining.subscribe" || req.method == "mining.authorize" {
                      let diff_notify = serde_json::json!({
-                        "id": null, "method": "mining.set_difficulty", "params": [0.01]
+                        "id": null, "method": "mining.set_difficulty", "params": [0.0001]
                     });
                     if let Ok(s) = serde_json::to_string(&diff_notify) {
                          let _ = stream_writer_resp.write_all((s + "\n").as_bytes());
@@ -1089,12 +951,9 @@ fn handle_client_ws(
             Ok(msg) => {
                 if msg.is_text() || msg.is_binary() {
                     let text = msg.to_text().unwrap_or("");
-                    // WebSocket VarDiff Placeholder (Static 0.01 for now)
-                    let current_vardiff = 0.01;
-                    
                     if let Ok(req) = serde_json::from_str::<RpcRequest>(text) {
                          let res = process_rpc_request(req.clone(), &chain, &mode_ref, &shares_ref, &wallet_ref, &session_miner_addr, 
-                             &current_block_template, &is_authorized, &last_notified_height, &extra_nonce_1, &last_job_id, &prev_job_id, &prev_block_template, &mut submitted_nonces, &node, current_vardiff);
+                             &current_block_template, &is_authorized, &last_notified_height, &extra_nonce_1, &last_job_id, &prev_job_id, &prev_block_template, &mut submitted_nonces, &node); // Passed node
                         
                          if let Some(val) = res {
                             let resp = RpcResponse { id: req.id, result: Some(val), error: None };
@@ -1104,7 +963,7 @@ fn handle_client_ws(
                             // FIX: Send Explicit Difficulty Notification after Subscribe
                             if req.method == "mining.subscribe" {
                                 let diff_notify = serde_json::json!({
-                                    "id": null, "method": "mining.set_difficulty", "params": [0.5]
+                                    "id": null, "method": "mining.set_difficulty", "params": [0.0001]
                                 });
                                 if let Ok(s) = serde_json::to_string(&diff_notify) {
                                      let _ = socket.send(Message::Text(s));
@@ -1121,5 +980,3 @@ fn handle_client_ws(
         }
     }
 }
-
-

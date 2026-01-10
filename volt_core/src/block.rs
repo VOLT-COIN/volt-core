@@ -112,7 +112,13 @@ impl Block {
         // Nonce (4 bytes)
         bytes.extend(&self.proof_of_work.to_le_bytes());
 
-        // DEBUG output removed to avoid spam
+        // DEBUG: Print Header
+        // Ensure it is 80 bytes
+        // if bytes.len() == 80 { ... } else { ... }
+
+
+        // Hybrid Consensus: Validator Stake (Excluded from PoW Hash to maintain 80-byte Standard Header)
+        // bytes.extend(&self.validator_stake.to_le_bytes()); 
         
         let mut hasher = Sha256::new();
         hasher.update(&bytes);
@@ -123,30 +129,7 @@ impl Block {
         hasher2.update(res1);
         let res2 = hasher2.finalize();
         
-        // Bitcoin Hash is Little Endian (Reversed)
-        let mut hash_bytes = res2.to_vec();
-        hash_bytes.reverse();
-        
-        hex::encode(hash_bytes)
-    }
-
-    pub fn get_header_hex(&self) -> String {
-        let mut bytes = Vec::new();
-        bytes.extend(&1u32.to_le_bytes()); // Version
-        
-        let mut prev_hash_bytes = if self.previous_hash == "0" { vec![0u8; 32] } else { hex::decode(&self.previous_hash).unwrap_or(vec![0u8; 32]) };
-        prev_hash_bytes.reverse();
-        bytes.extend(&prev_hash_bytes); 
-        
-        let mut merkle_bytes = hex::decode(&self.merkle_root).unwrap_or(vec![0u8; 32]);
-        merkle_bytes.reverse();
-        bytes.extend(&merkle_bytes); 
-        
-        bytes.extend(&(self.timestamp as u32).to_le_bytes());
-        bytes.extend(&self.difficulty.to_le_bytes());
-        bytes.extend(&self.proof_of_work.to_le_bytes());
-        
-        hex::encode(&bytes)
+        hex::encode(res2)
     }
 
     pub fn mine(&mut self, difficulty: usize, max_iterations: u64) -> bool {
@@ -185,13 +168,7 @@ impl Block {
     }
 
     pub fn check_pow(hash_hex: &str, distinct_bits: u32) -> bool {
-        if let Ok(mut bytes) = hex::decode(hash_hex) {
-            // Hash is Little Endian (reversed). 
-            // We want to check Leading Zeros of the Big Endian value.
-            // So we must iterate from the END of the byte array (MSB) to the START (LSB).
-            // Or simpler: Reverse the bytes back to Big Endian first.
-            bytes.reverse();
-
+        if let Ok(bytes) = hex::decode(hash_hex) {
             let mut zeros = 0;
             for &byte in &bytes {
                 if byte == 0 {

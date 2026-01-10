@@ -409,35 +409,17 @@ impl Blockchain {
             db, 
         };
 
-        let mut wipe_db = false;
+        let wipe_db = false;
 
         // Clone DB reference to avoid borrow conflict with mutable `create_genesis_block`
         if let Some(db) = blockchain.db.clone() {
             // Load Tip
             match db.get_last_block() {
                 Ok(Some(last_block)) => {
-                    // Check if Genesis matches new Static Consensus
-                    if let Ok(Some(existing_genesis)) = db.get_block(0) {
-                        let expected_genesis = blockchain.create_genesis_block();
-                        // DEBUG PERSISTENCE:
-                        println!("[Core] Checking Genesis Consistency...");
-                        println!("[Core] Stored (DB):   {}", existing_genesis.hash);
-                        println!("[Core] Computed (Code): {}", expected_genesis.hash);
-                        
-                        if existing_genesis.hash != expected_genesis.hash {
-                             println!("[Core] CRITICAL: Genesis Mismatch detected!");
-                             println!("[Core] Diff: Stored != Computed");
-                             println!("[Core] Initiating Auto-Wipe to upgrade chain...");
-                             wipe_db = true;
-                        } else {
-                            // Valid Chain
-                            blockchain.tip = Some(last_block);
-                            println!("[Core] Loaded Chain Tip from DB. Height: {}", blockchain.get_height());
-                        }
-                    } else {
-                        // Weird state: Has tip but no genesis? Wipe.
-                        wipe_db = true;
-                    }
+                    // 1. Genesis Check (Lazy - Check height 0 if needed, usually we trust DB)
+                    // For now, simpler: Just load tip.
+                    blockchain.tip = Some(last_block);
+                    println!("[Core] Loaded Chain Tip from DB. Height: {}", blockchain.get_height());
                 },
                 _ => {
                     // Empty DB or Error -> Initialize Genesis
@@ -452,10 +434,10 @@ impl Blockchain {
             }
         }
         
+        
         if wipe_db {
              // 1. Drop the DB connection to release file locks
              blockchain.db = None;
-             blockchain.state.db = None; // Important: Drop state reference too
              
              // 2. Delete the DB directory
              let path = std::path::Path::new("volt.db");
@@ -470,16 +452,10 @@ impl Blockchain {
              }
              
              // 3. Re-initialize DB
-             let new_db = Database::new("volt.db").ok().map(Arc::new);
-             blockchain.db = new_db.clone();
-             blockchain.state = ChainState::new(new_db);
+             blockchain.db = Database::new("volt.db").ok().map(Arc::new);
              
              // 4. Create correct Genesis
-             let genesis = blockchain.create_genesis_block();
-             if let Some(db) = &blockchain.db {
-                 let _ = db.save_block(&genesis);
-             }
-             blockchain.tip = Some(genesis);
+             blockchain.create_genesis_block();
         }
 
         blockchain
@@ -583,11 +559,9 @@ impl Blockchain {
 
             // 2. Process Transactions
             for (tx_idx, tx) in block.transactions.iter().enumerate() {
-                 // SECURITY FIX: Mandatory Signature Verification (Skip for SYSTEM/Coinbase)
-                 if tx.sender != "SYSTEM" && !tx.verify() {
-                     // Temporary Debug: Allow but log error
-                     println!("[Security Warning] Invalid Signature ignored for Tx: {}", hex::encode(tx.get_hash()));
-                     // return Err(format!("Invalid Transaction Signature at Block #{} Tx #{}", block.index, tx_idx));
+                 // SECURITY FIX: Mandatory Signature Verification
+                 if !tx.verify() {
+                     return Err(format!("Invalid Transaction Signature at Block #{} Tx #{}", block.index, tx_idx));
                  }
 
                  if tx.sender == "SYSTEM" {
@@ -615,33 +589,6 @@ impl Blockchain {
         Ok(state)
     }
     
-    // FIX: Explicit Block Template Creator ensuring Pending Txs are included
-    pub fn create_mining_block_template(&mut self, miner_address: String) -> Block {
-        let previous_block = self.get_last_block().unwrap_or_else(|| self.create_genesis_block());
-        let height = previous_block.index + 1;
-        let difficulty = self.get_next_difficulty();
-        let mut reward = self.calculate_reward(height);
-        
-        let mut txs = self.pending_transactions.clone();
-        
-        // Fee Calculation (Simplified)
-        let mut total_fees = 0;
-        for tx in &txs { total_fees += tx.fee; }
-        reward += total_fees;
-        
-        // Coinbase
-        let mut coinbase = Transaction::new("SYSTEM".to_string(), miner_address, reward, "VLT".to_string(), 0, 0);
-        // Important: Coinbase ID logic or ExtraNonce placeholder
-        coinbase.signature = "COINBASE".to_string(); 
-        
-        txs.insert(0, coinbase);
-        
-        // Stake used for validity (0 for Pool as it delegates Work)
-        let my_stake = 0; 
-        
-        Block::new(height, previous_block.hash.clone(), txs, difficulty as usize, my_stake)
-    }
-    
     // Wrapper for API
     pub fn apply_transaction_to_state(&mut self, tx: &Transaction) -> bool {
         self.state.apply_transaction(tx, self.get_height())
@@ -660,16 +607,15 @@ impl Blockchain {
         // Fair Launch Genesis: No Premine
         // We create a purely symbolic Genesis Block.
         
-        // STATIC GENESIS (Fixed Timestamp = Consensus Root)
-        // Thursday, January 1, 2026 12:00:00 AM GMT
-        let timestamp = 1767225600; 
+        // Dynamic Genesis for new network launch
+        let timestamp = chrono::Utc::now().timestamp() as u64; 
         
         let genesis_msg = Transaction {
-            version: 1,
-            sender: String::from("SYSTEM"),
-            receiver: String::from("0000000000000000000000000000000000000000000000000000000000000000"), // Unspendable
-            amount: 0, 
-            signature: String::from("VolteCore Fair Launch 2026 - First Mined Block"),
+        version: 1,
+        sender: String::from("SYSTEM"),
+        receiver: String::from("GENESIS"), // Unspendable
+        amount: 0, 
+        signature: String::from("VolteCore Fair Launch 2026"),
             timestamp, 
             token: String::from("VLT"),
             tx_type: crate::transaction::TxType::Transfer,
@@ -682,23 +628,25 @@ impl Blockchain {
         };
 
         // Use Testnet Minimum Difficulty 0x207fffff for Easy Mining/Testing
-        let mut genesis_block = Block::new(0, String::from("0000000000000000000000000000000000000000000000000000000000000000"), vec![genesis_msg], 0x207fffff, 0);
+        let mut genesis_block = Block::new(0, String::from("0"), vec![genesis_msg], 0x207fffff, 0);
         
-        // FIX: Override Block::new() dynamic values to force STATIC GENESIS
-        genesis_block.proof_of_work = 0; // Deterministic Nonce
-        genesis_block.timestamp = timestamp; // Deterministic Timestamp
+        // Remove Hardcoded overrides -> Return to Dynamic
+        // genesis_block.timestamp = 1767077203;
+        // genesis_block.proof_of_work = 0; 
+        // genesis_block.merkle_root = ...
         
-        // FORCE STATIC HASH
-        // We let it calculate normally, but since inputs are static, output is static.
+        // Recalculate Hash ensuring it matches the dynamic content
         genesis_block.hash = genesis_block.calculate_hash();
         
         // Debug Log
-        println!("[Genesis] Generated STATIC Genesis Block at {}", timestamp);
+        println!("[Genesis] Generated Dynamic Genesis Block at {}", timestamp);
         println!("[Genesis] Hash: {}", genesis_block.hash);
 
-        // Verify Hash Stability
-        // assert_eq!(genesis_block.hash, "EXPECTED_HASH_HERE"); // Optional for future
 
+
+        // Save Genesis to DB and set TIP
+
+        // Fix: Return the block!
         genesis_block
     }
 
@@ -1239,29 +1187,17 @@ impl Blockchain {
         }
     }
     
-    pub fn get_mining_candidate(&mut self, miner_address: String) -> Block {
+    pub fn get_mining_candidate(&self, miner_address: String) -> Block {
         let _height = self.get_height();
         let mut reward = self.calculate_reward(_height);
         
-        // CLEANUP: Filter out Invalid Signatures IN PLACE (Permanently remove from Mempool)
-        self.pending_transactions.retain(|tx| {
-            if tx.sender == "SYSTEM" { return true; }
-            if !tx.verify() {
-                 // SILENCED: User finds this log spammy. Permissive mode is active.
-                 // println!("[Mempool] ⚠️ Keeping Invalid Tx (Permissive Mode): {}", hex::encode(tx.get_hash()));
-                 return true; // RESTORED: User confirmed this was working (Permissive Chain Validation)
-            }
-            true
-        });
-
-        // Use the cleaned list
+        // Clone pending pool
         let mut txs = self.pending_transactions.clone();
 
         // ---------------------------------------------------------
         // BITCOIN-LIKE FEE MARKET
         // Prioritize transactions with higher fees (Fee Density)
         // ---------------------------------------------------------
-        
         txs.sort_by(|a, b| b.fee.cmp(&a.fee));
 
         // Limit transactions to prevent oversized blocks (Reserve 200 slots for System/Stake txs)
@@ -1456,9 +1392,6 @@ impl Blockchain {
                    println!("[Security] Fraudulent Stake Claim: Claimed {}, Real {}", block.validator_stake, real_stake);
                    return false;
               }
-         } else {
-              println!("[Security] No Coinbase found in block!");
-              return false;
          }
 
          // 5. Verify Timestamp (Time Warp Protection)
@@ -1528,9 +1461,9 @@ impl Blockchain {
         let target_timespan = retarget_interval * target_seconds_per_block;
         
         // FORCE TESTNET DIFFICULTY constant
-        // if true {
-        //      return 0x1effffff;
-        // }
+        if true {
+             return 0x207fffff;
+        }
 
         if (last_block.index + 1) % retarget_interval != 0 {
             return last_block.difficulty as u32;

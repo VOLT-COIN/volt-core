@@ -1,13 +1,14 @@
-// Target the HF Space directly (It runs Nginx -> Volt Core internally)
-let url = 'https://voltcore-node.hf.space';
-
-// If we are pointing to the Proxy itself, we don't need the ?node param
-// The Proxy (Nginx) inside the Space forwards /api/rpc to 127.0.0.1:7862
-return {
-    baseURL: url, // Axios will prepend this to '/api/rpc'
-    headers: { 'Content-Type': 'application/json' }
+export const getApiConfig = () => {
+    let url = 'http://82.201.143.174';
+    // Normalize URL: Ensure http:// or https://
+    if (url && !url.startsWith('http')) {
+        url = 'http://' + url;
+    }
+    return {
+        params: { node: url }, // Send as ?node=...
+        headers: { 'X-Node-Url': url }
+    };
 };
-
 
 // Start Helper for POST payloads with password
 export const getPayload = (cmd, data = {}) => ({
