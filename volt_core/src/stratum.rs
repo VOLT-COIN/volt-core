@@ -197,7 +197,7 @@ impl StratumServer {
                 println!("[Stratum] Job Updater Thread Started");
                 
                 loop {
-                    thread::sleep(Duration::from_millis(500));
+                    thread::sleep(Duration::from_millis(50)); // Fast Update (was 500ms)
                     
                     let (h, next_block) = {
                         let c = chain.lock().unwrap();
@@ -695,7 +695,8 @@ fn process_rpc_request(
                              // Check Staleness relative to current chain tip
                              let tip = chain_lock.get_last_block().unwrap_or_else(|| chain_lock.create_genesis_block());
                              if block.previous_hash != tip.hash {
-                                 println!("[Pool] Stale Block Solution (PrevHash mismatch). Submitting as Share only.");
+                                 // Verified: This is a valid share for PPLNS (Pool pays for it), just not for Blockchain.
+                                 println!("[Pool] Late Share (Block updated). Accepted for PPLNS.");
                              } else if chain_lock.submit_block(block.clone()) {
                                  chain_lock.save();
                                  // FIX: Broadcast Mined Block to P2P Network
