@@ -94,10 +94,9 @@ impl ApiServer {
         let shares = self.shares.clone();
 
         thread::spawn(move || {
-            // SECURITY FIX: Bind to 127.0.0.1 (Localhost Only)
-            // Use Nginx Reverse Proxy for external access (with SSL/Auth) if needed.
-            let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).expect("Failed to bind API port");
-            println!("[API] Server listening on 127.0.0.1:{} (Secured Loopback)", port);
+            // SECURITY FIX: Bind to 0.0.0.0 to allow VPS external access
+            let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).expect("Failed to bind API port");
+            println!("[API] Server listening on 0.0.0.0:{} (Public Access)", port);
 
             for stream in listener.incoming() {
                 match stream {
@@ -127,11 +126,10 @@ impl ApiServer {
                                 if request_str.starts_with("POST") || request_str.starts_with("OPTIONS") {
                                     is_http = true;
                                     // Handle Preflight OPTIONS
+                                    // Handle Preflight OPTIONS
                                     if request_str.starts_with("OPTIONS") {
-                                         // Fix: Remove Wildcard CORS. Only allow specific methods/headers if needed, or rely on Same-Origin.
-                                         // For broad compatibility with local wallet apps while blocking websites, we can reflect Origin if it is localhost.
-                                         // For now, simpliest security is REMOVE the allow-origin.
-                                         let response = "HTTP/1.1 204 No Content\r\nAccess-Control-Allow-Methods: POST, GET, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\n\r\n";
+                                         // Allow Vercel/External Access
+                                         let response = "HTTP/1.1 204 No Content\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: POST, GET, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\n\r\n";
                                          let _ = stream.write_all(response.as_bytes());
                                          return;
                                     }
@@ -159,7 +157,7 @@ impl ApiServer {
                                 if is_http {
                                     let content_len = response_json.len();
                                     let http_response = format!(
-                                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+                                        "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
                                         content_len,
                                         response_json
                                     );
