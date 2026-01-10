@@ -614,7 +614,7 @@ impl Blockchain {
     }
     
     // FIX: Explicit Block Template Creator ensuring Pending Txs are included
-    pub fn create_mining_block_template(&self, miner_address: String) -> Block {
+    pub fn create_mining_block_template(&mut self, miner_address: String) -> Block {
         let previous_block = self.get_last_block().unwrap_or_else(|| self.create_genesis_block());
         let height = previous_block.index + 1;
         let difficulty = self.get_next_difficulty();

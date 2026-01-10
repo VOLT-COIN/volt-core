@@ -200,7 +200,7 @@ impl StratumServer {
                     thread::sleep(Duration::from_millis(50)); // Fast Update (was 500ms)
                     
                     let (h, next_block) = {
-                        let c = chain.lock().unwrap();
+                        let mut c = chain.lock().unwrap();
                         let pool_addr = wallet.lock().unwrap().get_address();
                         // FIX: Use explicit template creator
                         (c.get_height(), c.create_mining_block_template(pool_addr))
