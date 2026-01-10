@@ -314,7 +314,8 @@ impl Node {
                                         let all = chain.get_all_blocks();
                                         // Find start block
                                         let start_idx = all.iter().position(|b| b.hash == locator).map(|i| i + 1).unwrap_or(0);
-                                        let end_idx = std::cmp::min(start_idx + 2000, all.len());
+                                        // FIX: Reduce batch size from 2000 to 500 to preventtimeouts on large payloads (4MB -> 1MB)
+                                        let end_idx = std::cmp::min(start_idx + 500, all.len());
                                         
                                         let headers = if start_idx < all.len() {
                                              // Strip Transactions for "Headers" (Lightweight)
@@ -538,7 +539,8 @@ impl Node {
                                                             // Logic for downloading blocks...
                                                             if let Some(first) = headers.first() {
                                                                 let start = first.index as usize;
-                                                                let limit = headers.len();
+                                                                // FIX: Cap request at 500 blocks even if more headers received
+                                                                let limit = std::cmp::min(headers.len(), 500);
                                                                 let msg_get = Message::GetBlocks { start, limit };
                                                                 if let Ok(req_json) = serde_json::to_string(&msg_get) {
                                                                     let _ = socket.send(tungstenite::Message::Text(req_json));
@@ -572,7 +574,8 @@ impl Node {
                                 }
 
                                 // Read Loop
-                                let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+                                // FIX: Increase timeout to 60s for slow connections/large blocks
+                                let _ = stream.set_read_timeout(Some(Duration::from_secs(60)));
                                 let mut de = serde_json::Deserializer::from_reader(&stream);
                                 while let Ok(parsed) = Message::deserialize(&mut de) {
                                     match parsed {
@@ -598,7 +601,8 @@ impl Node {
                                             println!("[Sync] Received {} Headers via TCP. Requesting Blocks...", headers.len());
                                             if let Some(first) = headers.first() {
                                                 let start = first.index as usize;
-                                                let limit = headers.len();
+                                                // FIX: Cap request at 500
+                                                let limit = std::cmp::min(headers.len(), 500);
                                                 let msg_get = Message::GetBlocks { start, limit };
                                                 let _ = writer.write_all(serde_json::to_string(&msg_get).unwrap().as_bytes());
                                                 // Continue loop to receive Chain
