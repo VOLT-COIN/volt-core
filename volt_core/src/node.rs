@@ -51,18 +51,59 @@ impl Node {
 
     pub fn broadcast_block(&self, block: Block) {
         let peers = self.peers.lock().unwrap().clone();
-        let msg = Message::NewBlock(block);
+        let msg = Message::NewBlock(block.clone());
         let json = serde_json::to_string(&msg).unwrap();
         
+        // Capture Chain Reference
+        let chain_ref = self.blockchain.clone();
+
         thread::spawn(move || {
             for peer in peers {
                 if peer.starts_with("ws://") || peer.starts_with("wss://") {
                     if let Ok((mut socket, _)) = tungstenite::connect(&peer) {
+                         // Send NewBlock
                          let _ = socket.send(tungstenite::Message::Text(json.clone()));
+                         
+                         // FIX: Listen for potential Sync Requests (GetBlocks) for 10s
+                         let start = std::time::Instant::now();
+                         while start.elapsed() < std::time::Duration::from_secs(10) {
+                             if let Ok(msg) = socket.read() {
+                                 if msg.is_text() {
+                                     let text = msg.to_text().unwrap_or("{}");
+                                     if let Ok(parsed) = serde_json::from_str::<Message>(text) {
+                                         if let Message::GetBlocks { start, limit } = parsed {
+                                             println!("[Broadcast] Serving Sync Request from {}: Start {}, Limit {}", peer, start, limit);
+                                             
+                                             let chain = chain_ref.lock().unwrap();
+                                             let height = chain.get_height() as usize;
+                                             
+                                             if start < height {
+                                                 let mut chunk = Vec::new();
+                                                 let end = std::cmp::min(start + limit, height);
+                                                 
+                                                 if let Some(ref db) = chain.db {
+                                                      for i in start..end {
+                                                          if let Ok(Some(block)) = db.get_block(i as u64) {
+                                                              chunk.push(block);
+                                                          }
+                                                      }
+                                                 }
+                                                 
+                                                 let resp = Message::Chain(chunk);
+                                                 let resp_json = serde_json::to_string(&resp).unwrap_or_default();
+                                                 let _ = socket.send(tungstenite::Message::Text(resp_json));
+                                             }
+                                         }
+                                     }
+                                 }
+                             } else { break; }
+                         }
                     }
                 } else {
                     if let Ok(mut stream) = TcpStream::connect(&peer) {
                         let _ = stream.write_all(json.as_bytes());
+                        // Listen for TCP response? (Similar logic needed if TCP peers exist)
+                        // For now focusing on WSS which is the main transport.
                     }
                 }
             }
