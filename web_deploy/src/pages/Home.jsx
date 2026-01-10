@@ -327,7 +327,7 @@ function Home() {
                 <p style={{ color: 'var(--text-muted)', marginBottom: '20px' }}>Connect your miners to the official Volt Pool.</p>
 
                 <div style={{ background: 'rgba(0,0,0,0.3)', padding: '20px', borderRadius: '12px', display: 'inline-block', fontFamily: 'monospace', fontSize: '1.2rem', color: '#fff', border: '1px solid #333' }}>
-                    stratum+tcp://voltcore-node.hf.space:3333
+                    stratum+tcp://82.201.143.174:3333
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '20px', maxWidth: '600px', margin: '40px auto' }}>
