@@ -1103,8 +1103,7 @@ fn handle_client_ws(
                             }
                             // FIX: Send Explicit Difficulty Notification after Subscribe
                             if req.method == "mining.subscribe" {
-                                let diff_notify = serde_json::json!({
-                                    "id": null, "method": "mining.set_difficulty", "params": [0.0001]
+                                    "id": null, "method": "mining.set_difficulty", "params": [0.5]
                                 });
                                 if let Ok(s) = serde_json::to_string(&diff_notify) {
                                      let _ = socket.send(Message::Text(s));
@@ -1122,25 +1121,4 @@ fn handle_client_ws(
     }
 }
 
-                                let _ = socket.send(Message::Text(s));
-                            }
-                            // FIX: Send Explicit Difficulty Notification after Subscribe
-                            if req.method == "mining.subscribe" {
-                                let diff_notify = serde_json::json!({
-                                    "id": null, "method": "mining.set_difficulty", "params": [0.0001]
-                                });
-                                if let Ok(s) = serde_json::to_string(&diff_notify) {
-                                     let _ = socket.send(Message::Text(s));
-                                }
-                            }
-                        }
-                    }
-                } else if msg.is_close() { break; }
-            },
-            Err(tungstenite::Error::Io(e)) if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut => {
-                continue; 
-            },
-            Err(_) => break, // Connection closed
-        }
-    }
-}
+
