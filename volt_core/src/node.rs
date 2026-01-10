@@ -527,13 +527,18 @@ impl Node {
                                                          }
                                                     },
                                                     Message::Headers(headers) => {
-                                                        println!("[Sync] Client Received {} Headers. Requesting Blocks...", headers.len());
-                                                        if let Some(first) = headers.first() {
-                                                            let start = first.index as usize;
-                                                            let limit = headers.len();
-                                                            let msg_get = Message::GetBlocks { start, limit };
-                                                            if let Ok(req_json) = serde_json::to_string(&msg_get) {
-                                                                let _ = socket.send(tungstenite::Message::Text(req_json));
+                                                        if headers.is_empty() {
+                                                             println!("[Sync] Synced. (No new headers)");
+                                                        } else {
+                                                            println!("[Sync] Received {} Headers. Requesting Blocks...", headers.len());
+                                                            // Logic for downloading blocks...
+                                                            if let Some(first) = headers.first() {
+                                                                let start = first.index as usize;
+                                                                let limit = headers.len();
+                                                                let msg_get = Message::GetBlocks { start, limit };
+                                                                if let Ok(req_json) = serde_json::to_string(&msg_get) {
+                                                                    let _ = socket.send(tungstenite::Message::Text(req_json));
+                                                                }
                                                             }
                                                         }
                                                     },
@@ -582,7 +587,11 @@ impl Node {
                                             break; // Done after chain
                                         },
                                         Message::Headers(headers) => {
-                                            println!("[Sync] Client Received {} Headers via TCP. Requesting Blocks...", headers.len());
+                                            if headers.is_empty() {
+                                                println!("[Sync] Synced (TCP). No new headers.");
+                                                break;
+                                            }
+                                            println!("[Sync] Received {} Headers via TCP. Requesting Blocks...", headers.len());
                                             if let Some(first) = headers.first() {
                                                 let start = first.index as usize;
                                                 let limit = headers.len();

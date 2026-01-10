@@ -861,6 +861,11 @@ fn handle_client(
     let target_share_time = 3.0; // Seconds (20 shares/min)
     let variance = 0.40; // 40% variance allowed
     let current_vardiff_ref = Arc::new(Mutex::new(current_vardiff));
+    
+    // NEW: Share Buffer to smooth out bursts
+    let mut share_count_buffer = 0;
+    let mut time_buffer_start = std::time::Instant::now();
+    let retarget_interval = 10; // Retarget every 10 shares
 
     // Notifier Thread
     let (block_n, prev_block_n, auth_n, last_job_n, prev_job_n, job_src_n) = (
@@ -919,28 +924,39 @@ fn handle_client(
         let mut should_notify = false;
 
         if line.contains("mining.submit") {
-             let now = std::time::Instant::now();
-             let time_since_last = now.duration_since(last_share_time).as_secs_f64();
-             last_share_time = now;
-
-             let mut new_diff = current_vardiff;
-             if time_since_last < target_share_time * (1.0 - variance) {
-                  // Too Fast -> Increase Difficulty
-                  new_diff *= 2.0;
-             } else if time_since_last > target_share_time * (1.0 + variance) {
-                  // Too Slow -> Decrease Difficulty
-                  new_diff /= 2.0;
-             }
+             // Buffer Shares
+             share_count_buffer += 1;
              
-             // Bounds Check
-             if new_diff < 0.001 { new_diff = 0.001; }
-             if new_diff > 1.0 { new_diff = 1.0; } 
+             if share_count_buffer >= retarget_interval {
+                 let now = std::time::Instant::now();
+                 let time_elapsed = now.duration_since(time_buffer_start).as_secs_f64();
+                 let avg_time_per_share = time_elapsed / share_count_buffer as f64;
+                 
+                 // Reset Buffer
+                 share_count_buffer = 0;
+                 time_buffer_start = now; // Reset timer for next batch
 
-             if (new_diff - current_vardiff).abs() > 0.0001f64 {
-                  current_vardiff = new_diff;
-                  *current_vardiff_ref.lock().unwrap() = current_vardiff;
-                  println!("[VarDiff] Retargeting Miner {} to Diff={:.4} (Rate={:.2}s)", session_miner_addr.lock().unwrap(), current_vardiff, time_since_last);
-                  should_notify = true;
+                 let mut new_diff = current_vardiff;
+                 
+                 // Logic: Match Average Rate to Target
+                 if avg_time_per_share < target_share_time * (1.0 - variance) {
+                      // Too Fast -> Increase Difficulty
+                      new_diff *= 2.0;
+                 } else if avg_time_per_share > target_share_time * (1.0 + variance) {
+                      // Too Slow -> Decrease Difficulty
+                      new_diff /= 2.0;
+                 }
+                 
+                 // Bounds Check
+                 if new_diff < 0.001 { new_diff = 0.001; }
+                 if new_diff > 1.0 { new_diff = 1.0; } 
+
+                 if (new_diff - current_vardiff).abs() > 0.0001f64 {
+                      current_vardiff = new_diff;
+                      *current_vardiff_ref.lock().unwrap() = current_vardiff;
+                      println!("[VarDiff] Retargeting (Avg {:.2}s/share). Miner {} -> Diff={:.4}", avg_time_per_share, session_miner_addr.lock().unwrap(), current_vardiff);
+                      should_notify = true;
+                 }
              }
         }
         if should_notify {
