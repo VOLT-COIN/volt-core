@@ -632,8 +632,8 @@ impl Blockchain {
         // We create a purely symbolic Genesis Block.
         
         // STATIC GENESIS (Fixed Timestamp = Consensus Root)
-        // Saturday, January 10, 2026 12:00:00 PM GMT
-        let timestamp = 1768046400; 
+        // Set to a time in the past (e.g., Jan 9, 2026) to ensure MTP check passes for new blocks
+        let timestamp = 1768000000; 
         
         let genesis_msg = Transaction {
             version: 1,
