@@ -774,29 +774,6 @@ fn process_rpc_request(
                                                 }
                                            }
 
-                                      for (miner, amount) in payouts { // Consume here is fine
-                                          let amount_u64 = amount as u64;
-                                          let base_fee = 100_000;
-                                          let percentage_fee = (amount_u64 as f64 * 0.001) as u64;
-                                          let tx_fee = base_fee + percentage_fee;
-                                          
-                                          if amount_u64 > tx_fee + 1000 {
-                                               current_nonce += 1;
-                                               let net_amount = amount_u64 - tx_fee;
-                                               let tx = crate::transaction::Transaction::new(
-                                                   pool_addr.clone(), miner.clone(), net_amount, "VLT".to_string(), current_nonce, tx_fee
-                                               );
-                                               if let Some(pk) = &server_wallet.lock().unwrap().private_key {
-                                                  use k256::ecdsa::signature::Signer;
-                                                  let signature: k256::ecdsa::Signature = pk.sign(&tx.get_hash());
-                                                  let mut signed_tx = tx.clone();
-                                                  signed_tx.signature = hex::encode(signature.to_bytes());
-                                                  chain_lock.pending_transactions.push(signed_tx);
-                                                  
-                                                  println!("[PPLNS] Paying {:.8} VLT to Miner: {} (Tx Fee: {:.8} VLT)", net_amount as f64 / 1e8, miner, tx_fee as f64 / 1e8);
-                                                }
-                                          }
-                                      }
                                       // PROP: CLEAR SHARES after payout.
                                       shares_lock.clear(); 
                                   }
