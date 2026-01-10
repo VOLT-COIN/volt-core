@@ -56,8 +56,14 @@ impl Node {
         
         thread::spawn(move || {
             for peer in peers {
-                if let Ok(mut stream) = TcpStream::connect(&peer) {
-                    let _ = stream.write_all(json.as_bytes());
+                if peer.starts_with("ws://") || peer.starts_with("wss://") {
+                    if let Ok((mut socket, _)) = tungstenite::connect(&peer) {
+                         let _ = socket.send(tungstenite::Message::Text(json.clone()));
+                    }
+                } else {
+                    if let Ok(mut stream) = TcpStream::connect(&peer) {
+                        let _ = stream.write_all(json.as_bytes());
+                    }
                 }
             }
         });
