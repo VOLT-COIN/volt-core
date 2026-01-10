@@ -781,10 +781,6 @@ fn process_rpc_request(
                                           let tx_fee = base_fee + percentage_fee;
                                           
                                           if amount_u64 > tx_fee + 1000 {
-                                               // DISABLE MANUAL PPLNS PAYOUTS TEMPORARILY
-                                               // The signature generation here is failing (Invalid Signature).
-                                               // We rely on Coinbase Payouts or Custodial Pool logic for now.
-                                               /*
                                                current_nonce += 1;
                                                let net_amount = amount_u64 - tx_fee;
                                                let tx = crate::transaction::Transaction::new(
@@ -799,7 +795,6 @@ fn process_rpc_request(
                                                   
                                                   println!("[PPLNS] Paying {:.8} VLT to Miner: {} (Tx Fee: {:.8} VLT)", net_amount as f64 / 1e8, miner, tx_fee as f64 / 1e8);
                                                 }
-                                                */
                                           }
                                       }
                                       // PROP: CLEAR SHARES after payout.
