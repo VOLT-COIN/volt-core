@@ -734,12 +734,33 @@ fn process_rpc_request(
                                       } else {
                                            // Logic continues...
                                            let pool_addr = server_wallet.lock().unwrap().get_address();
+                                           
+                                           // VERIFICATION: Check Pool Balance
+                                           let pool_balance = chain_lock.state.get_balance(&pool_addr, "VLT");
+                                           let total_needed: u64 = payouts.values().map(|v| *v as u64).sum();
+                                           
+                                           if pool_balance < total_needed {
+                                                println!("[PPLNS] ⚠️  WARNING: Insufficient Pool Balance!");
+                                                println!("[PPLNS] Available: {:.8} VLT, Needed: {:.8} VLT", pool_balance as f64 / 1e8, total_needed as f64 / 1e8);
+                                                println!("[PPLNS] Payouts will likely be REJECTED by the network until block rewards mature (10 blocks).");
+                                           }
+
                                            let mut current_nonce = chain_lock.state.get_nonce(&pool_addr);
+                                           
+                                           // Check if we already have pending txs using this nonce to avoid "Existing Nonce" errors
+                                           // Simple local nonce tracking adjustment
+                                           for tx in &chain_lock.pending_transactions {
+                                                if tx.sender == pool_addr {
+                                                    if tx.nonce > current_nonce { current_nonce = tx.nonce; }
+                                                }
+                                           }
+
                                       for (miner, amount) in payouts { // Consume here is fine
                                           let amount_u64 = amount as u64;
                                           let base_fee = 100_000;
                                           let percentage_fee = (amount_u64 as f64 * 0.001) as u64;
                                           let tx_fee = base_fee + percentage_fee;
+                                          
                                           if amount_u64 > tx_fee + 1000 {
                                                current_nonce += 1;
                                                let net_amount = amount_u64 - tx_fee;
