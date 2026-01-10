@@ -613,6 +613,33 @@ impl Blockchain {
         Ok(state)
     }
     
+    // FIX: Explicit Block Template Creator ensuring Pending Txs are included
+    pub fn create_mining_block_template(&self, miner_address: String) -> Block {
+        let previous_block = self.get_last_block().unwrap_or_else(|| self.create_genesis_block());
+        let height = previous_block.index + 1;
+        let difficulty = self.get_next_difficulty();
+        let mut reward = self.calculate_reward(height);
+        
+        let mut txs = self.pending_transactions.clone();
+        
+        // Fee Calculation (Simplified)
+        let mut total_fees = 0;
+        for tx in &txs { total_fees += tx.fee; }
+        reward += total_fees;
+        
+        // Coinbase
+        let mut coinbase = Transaction::new("SYSTEM".to_string(), miner_address, reward, "VLT".to_string(), 0, 0);
+        // Important: Coinbase ID logic or ExtraNonce placeholder
+        coinbase.signature = "COINBASE".to_string(); 
+        
+        txs.insert(0, coinbase);
+        
+        // Stake used for validity (0 for Pool as it delegates Work)
+        let my_stake = 0; 
+        
+        Block::new(height, previous_block.hash.clone(), txs, difficulty as usize, my_stake)
+    }
+    
     // Wrapper for API
     pub fn apply_transaction_to_state(&mut self, tx: &Transaction) -> bool {
         self.state.apply_transaction(tx, self.get_height())
