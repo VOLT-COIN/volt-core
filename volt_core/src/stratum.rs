@@ -727,7 +727,7 @@ fn process_rpc_request(
                                  let total_reward = crate::block::Block::get_block_reward(block.index) as f64; 
                                  let fee = 0.0;
                                  let distributable = total_reward - fee;
-                                 let shares_lock = shares_ref.lock().unwrap();
+                                 let mut shares_lock = shares_ref.lock().unwrap(); // Mutability for clear()
                                   // REVERT TO PROP: Use all shares in list
                                   let shares_in_window: Vec<_> = shares_lock.iter().collect(); // Use ALL shares
                                   let total_shares_window: f64 = shares_in_window.iter().map(|s| s.difficulty).sum();
@@ -874,7 +874,7 @@ fn handle_client(
     let mut submitted_nonces = HashSet::new();
 
     // VarDiff State
-    let mut last_share_time = std::time::Instant::now();
+    let mut _last_share_time = std::time::Instant::now();
     let mut current_vardiff: f64 = 0.01; // Start Low
     let target_share_time = 3.0; // Seconds (20 shares/min)
     let variance = 0.40; // 40% variance allowed
