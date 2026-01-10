@@ -546,9 +546,11 @@ impl Node {
                             }
                         } else {
                             // TCP Sync Logic
-                            if let Ok(mut stream) = TcpStream::connect(&peer_addr) {
+                            if let Ok(stream) = TcpStream::connect(&peer_addr) {
+                                let mut writer = stream.try_clone().expect("Failed to clone stream");
+                                
                                 // Handshake: GetPeers
-                                let _ = stream.write_all(serde_json::to_string(&Message::GetPeers).unwrap_or_default().as_bytes());
+                                let _ = writer.write_all(serde_json::to_string(&Message::GetPeers).unwrap_or_default().as_bytes());
                                 
                                 let locator = {
                                     let c = chain_inner.lock().unwrap();
@@ -557,10 +559,10 @@ impl Node {
 
                                 let msg = Message::GetHeaders { locator };
                                 if let Ok(json) = serde_json::to_string(&msg) {
-                                    let _ = stream.write_all(json.as_bytes());
+                                    let _ = writer.write_all(json.as_bytes());
                                 }
 
-                                // Read Loop (Short Lived)
+                                // Read Loop
                                 let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
                                 let mut de = serde_json::Deserializer::from_reader(&stream);
                                 while let Ok(parsed) = Message::deserialize(&mut de) {
@@ -585,7 +587,7 @@ impl Node {
                                                 let start = first.index as usize;
                                                 let limit = headers.len();
                                                 let msg_get = Message::GetBlocks { start, limit };
-                                                let _ = stream.write_all(serde_json::to_string(&msg_get).unwrap().as_bytes());
+                                                let _ = writer.write_all(serde_json::to_string(&msg_get).unwrap().as_bytes());
                                                 // Continue loop to receive Chain
                                             } else {
                                                 break;
