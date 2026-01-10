@@ -230,7 +230,7 @@ impl Node {
                                             let msg = Message::GetBlocks { start: (last_index + 1) as usize, limit: 500 };
                                             Ok(Some(msg))
                                         } else if block.index <= last_index {
-                                            println!("[P2P] Received Stale Block #{}. Ignoring.", block.index);
+                                            println!("[P2P] Block #{} already known (Head: {}). Valid.", block.index, last_index);
                                             Ok(None)
                                         } else {
                                             // Verify Linkage
