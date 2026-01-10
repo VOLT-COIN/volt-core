@@ -607,15 +607,16 @@ impl Blockchain {
         // Fair Launch Genesis: No Premine
         // We create a purely symbolic Genesis Block.
         
-        // Dynamic Genesis for new network launch
-        let timestamp = chrono::Utc::now().timestamp() as u64; 
+        // STATIC GENESIS (Fixed Timestamp = Consensus Root)
+        // Saturday, January 10, 2026 12:00:00 PM GMT
+        let timestamp = 1768046400; 
         
         let genesis_msg = Transaction {
-        version: 1,
-        sender: String::from("SYSTEM"),
-        receiver: String::from("GENESIS"), // Unspendable
-        amount: 0, 
-        signature: String::from("VolteCore Fair Launch 2026"),
+            version: 1,
+            sender: String::from("SYSTEM"),
+            receiver: String::from("0000000000000000000000000000000000000000000000000000000000000000"), // Unspendable
+            amount: 0, 
+            signature: String::from("VolteCore Fair Launch 2026 - First Mined Block"),
             timestamp, 
             token: String::from("VLT"),
             tx_type: crate::transaction::TxType::Transfer,
@@ -628,25 +629,19 @@ impl Blockchain {
         };
 
         // Use Testnet Minimum Difficulty 0x207fffff for Easy Mining/Testing
-        let mut genesis_block = Block::new(0, String::from("0"), vec![genesis_msg], 0x207fffff, 0);
+        let mut genesis_block = Block::new(0, String::from("0000000000000000000000000000000000000000000000000000000000000000"), vec![genesis_msg], 0x207fffff, 0);
         
-        // Remove Hardcoded overrides -> Return to Dynamic
-        // genesis_block.timestamp = 1767077203;
-        // genesis_block.proof_of_work = 0; 
-        // genesis_block.merkle_root = ...
-        
-        // Recalculate Hash ensuring it matches the dynamic content
+        // FORCE STATIC HASH
+        // We let it calculate normally, but since inputs are static, output is static.
         genesis_block.hash = genesis_block.calculate_hash();
         
         // Debug Log
-        println!("[Genesis] Generated Dynamic Genesis Block at {}", timestamp);
+        println!("[Genesis] Generated STATIC Genesis Block at {}", timestamp);
         println!("[Genesis] Hash: {}", genesis_block.hash);
 
+        // Verify Hash Stability
+        // assert_eq!(genesis_block.hash, "EXPECTED_HASH_HERE"); // Optional for future
 
-
-        // Save Genesis to DB and set TIP
-
-        // Fix: Return the block!
         genesis_block
     }
 
