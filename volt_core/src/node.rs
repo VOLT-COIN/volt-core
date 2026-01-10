@@ -178,8 +178,10 @@ impl Node {
                                         let last_index = last_block.as_ref().map(|b| b.index).unwrap_or(0);
 
                                         if block.index > last_index + 1 {
-                                            println!("[P2P] Received Future Block #{} (Head: {}). Requesting Sync.", block.index, last_index);
-                                            Ok(Some(Message::GetChain))
+                                            println!("[P2P] Received Future Block #{} (Head: {}). Requesting Sync from #{}.", block.index, last_index, last_index + 1);
+                                            // FIX: Don't ask for full chain (GetChain starts at 0). Ask for new blocks.
+                                            let msg = Message::GetBlocks { start: (last_index + 1) as usize, limit: 500 };
+                                            Ok(Some(msg))
                                         } else if block.index <= last_index {
                                             println!("[P2P] Received Stale Block #{}. Ignoring.", block.index);
                                             Ok(None)
@@ -187,7 +189,9 @@ impl Node {
                                             // Verify Linkage
                                             let last_hash = last_block.as_ref().map(|b| b.hash.clone()).unwrap_or_default();
                                             if block.previous_hash != last_hash {
-                                                 println!("[P2P] Block #{} Fork Detected. Requesting Sync to resolve.", block.index);
+                                                 println!("[P2P] Block #{} Fork Detected (PrevHash mismatch). Requesting Chain Replacement.", block.index);
+                                                 // Here we might actually need full reorg logic, so GetChain (start 0) is safer fallback for deep forks,
+                                                 // but efficient reorgs should use HeadersFirst. valid for now.
                                                  return Ok(Some(Message::GetChain));
                                             }
 
