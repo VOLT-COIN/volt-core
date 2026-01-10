@@ -202,7 +202,8 @@ impl StratumServer {
                     let (h, next_block) = {
                         let c = chain.lock().unwrap();
                         let pool_addr = wallet.lock().unwrap().get_address();
-                        (c.get_height(), c.get_mining_candidate(pool_addr))
+                        // FIX: Use explicit template creator
+                        (c.get_height(), c.create_mining_block_template(pool_addr))
                     };
                     
                     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or(Duration::from_secs(0)).as_secs();
@@ -234,6 +235,10 @@ impl StratumServer {
                          }
 
                          let notify = create_mining_notify(&next_block, &job_id, &pool_addr);
+                         
+                         if next_block.transactions.len() > 1 {
+                             println!("[Stratum] Job Updated: Block #{} with {} Txs (Payouts Included)", next_block.index, next_block.transactions.len() - 1);
+                         }
                          
                          let mut state = job_state.lock().unwrap();
                          state.job_id = job_id;
