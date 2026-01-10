@@ -3,7 +3,7 @@ use sled::Db;
 use crate::block::Block;
 use crate::transaction::Transaction;
 
-use serde_json;
+
 
 pub struct Database {
     db: Db,

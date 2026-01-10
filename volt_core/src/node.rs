@@ -666,7 +666,6 @@ impl Node {
 
 
     #[allow(dead_code)]
-
     pub fn start_discovery(&self) {
         let peers_ref = self.peers.clone();
         let routing_ref = self.routing_table.clone(); // Added for DHT

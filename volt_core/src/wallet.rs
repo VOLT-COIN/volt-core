@@ -103,10 +103,23 @@ impl Wallet {
         if self.is_locked || self.private_key.is_none() { return false; }
         
         let hex_key = hex::encode(self.private_key.as_ref().unwrap().to_bytes());
-        let mut encrypted = encrypt_data(hex_key.as_bytes(), password);
+        
+        let mut encrypted = match encrypt_data(hex_key.as_bytes(), password) {
+            Ok(enc) => enc,
+            Err(e) => {
+                println!("[Wallet] Encryption failed: {}", e);
+                return false;
+            }
+        };
         encrypted.mnemonic = self.mnemonic.clone();
 
-        let json = serde_json::to_string(&encrypted).unwrap();
+        let json = match serde_json::to_string(&encrypted) {
+            Ok(s) => s,
+            Err(e) => {
+                println!("[Wallet] Serialization failed: {}", e);
+                return false;
+            }
+        };
         
         // Atomic Write (Prevent Corruption)
         let temp_file = "wallet.enc.tmp";
@@ -177,7 +190,7 @@ impl Wallet {
 }
 
 // Helpers
-fn encrypt_data(data: &[u8], password: &str) -> EncryptedData {
+fn encrypt_data(data: &[u8], password: &str) -> Result<EncryptedData, String> {
     use aes_gcm::aead::rand_core::RngCore;
     
     let mut salt = [0u8; 16];
@@ -192,14 +205,15 @@ fn encrypt_data(data: &[u8], password: &str) -> EncryptedData {
     OsRng.fill_bytes(&mut nonce_bytes);
     let nonce = aes_gcm::Nonce::from_slice(&nonce_bytes);
 
-    let ciphertext = cipher.encrypt(nonce, data).expect("Encryption failed");
+    let ciphertext = cipher.encrypt(nonce, data)
+        .map_err(|e| format!("Encryption failed: {}", e))?;
 
-    EncryptedData {
+    Ok(EncryptedData {
         salt: salt.to_vec(),
         nonce: nonce_bytes.to_vec(),
         ciphertext,
         mnemonic: None, 
-    }
+    })
 }
 
 fn decrypt_data(data: &EncryptedData, password: &str) -> Result<Vec<u8>, aes_gcm::Error> {

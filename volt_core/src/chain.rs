@@ -679,6 +679,12 @@ impl Blockchain {
                  return false;
              }
         }
+        
+        // LOGIC FIX: Prevent spoofing "SYSTEM" to DoS miners
+        if transaction.sender == "SYSTEM" {
+            println!("[Mempool] Rejected external SYSTEM transaction.");
+            return false;
+        }
 
         if transaction.sender != "SYSTEM" {
              let current_nonce = self.state.get_nonce(&transaction.sender);
@@ -1149,7 +1155,7 @@ impl Blockchain {
              }
         }
 
-        let previous_block = self.get_last_block().unwrap();
+        let previous_block = self.get_last_block().unwrap_or_else(|| Block::new(0, String::from("0"), vec![], 0, 0));
         let difficulty = self.get_next_difficulty();
         
         println!("Mining block {} [Difficulty: {}, Reward: {:.8} VLT]...", previous_block.index + 1, difficulty, reward as f64 / 100_000_000.0);
@@ -1248,7 +1254,7 @@ impl Blockchain {
             
 
 
-        let previous_block = self.get_last_block().unwrap();
+        let previous_block = self.get_last_block().unwrap_or_else(|| Block::new(0, String::from("0"), vec![], 0, 0));
         let difficulty = self.get_next_difficulty();
 
         // my_stake already captured above
@@ -1452,7 +1458,7 @@ impl Blockchain {
 
 
     fn get_next_difficulty(&self) -> u32 {
-        let last_block = self.get_last_block().unwrap();
+        let last_block = self.get_last_block().unwrap_or_else(|| Block::new(0, String::from("0"), vec![], 0, 0));
         
         // Retarget every 1440 blocks (1 Day) - Production Standard
         // Retarget every 1440 blocks (1 Day) - Production Standard
@@ -1460,10 +1466,7 @@ impl Blockchain {
         let target_seconds_per_block = 60; // 1 Minute
         let target_timespan = retarget_interval * target_seconds_per_block;
         
-        // FORCE TESTNET DIFFICULTY constant
-        if true {
-             return 0x207fffff;
-        }
+
 
         if (last_block.index + 1) % retarget_interval != 0 {
             return last_block.difficulty as u32;

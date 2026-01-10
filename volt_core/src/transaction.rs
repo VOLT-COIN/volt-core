@@ -4,7 +4,7 @@ use k256::ecdsa::{SigningKey, VerifyingKey, Signature, signature::Signer};
 use k256::ecdsa::signature::Verifier;
 use k256::elliptic_curve::scalar::IsHigh; // Trait required for is_high() check
 use crate::script::Script;
-use hex;
+
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum TxType {
@@ -79,7 +79,7 @@ impl Transaction {
     pub fn new(sender: String, receiver: String, amount: u64, token: String, nonce: u64, fee: u64) -> Self {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or(std::time::Duration::from_secs(0))
             .as_secs();
 
         // P2PKH Logic
@@ -309,46 +309,8 @@ impl Transaction {
         }
     }
 
-    pub fn new_deploy(sender: String, bytecode: Vec<u8>, nonce: u64) -> Self {
-         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-         Transaction {
-            version: 1,
-            sender: sender.clone(),
-            receiver: String::new(), // No receiver for deploy
-            amount: 0,
-            signature: String::new(),
-            timestamp,
-            token: "VLT".to_string(),
-            tx_type: TxType::DeployContract,
-            nonce,
-            fee: 200_000, 
-            script_pub_key: Script::new(),
-            script_sig: Script::new(),
-            price: 0,
-            data: bytecode,
-        }
-    }
 
-    pub fn new_call(sender: String, contract: String, _method: &str, args: Vec<u8>, nonce: u64) -> Self {
-         let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-         // define arg payload? For now just raw bytes
-         Transaction {
-            version: 1,
-            sender,
-            receiver: contract,
-            amount: 0,
-            signature: String::new(),
-            timestamp,
-            token: "VLT".to_string(),
-            tx_type: TxType::CallContract,
-            nonce,
-            fee: 50_000, 
-            script_pub_key: Script::new(),
-            script_sig: Script::new(),
-            price: 0,
-            data: args, // We might need to encode method name here too? Or use formatted string "method|args"
-        }
-    }
+
 
     pub fn get_hash(&self) -> Vec<u8> {
         let mut bytes = Vec::new();

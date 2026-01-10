@@ -1,5 +1,5 @@
 use std::net::{TcpListener, TcpStream};
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufReader, Write};
 use std::thread;
 use std::sync::{Arc, Mutex};
 use serde::{Serialize, Deserialize};
@@ -129,9 +129,16 @@ fn create_mining_notify(
     // Miner reverses to LE for header.
     let ntime_hex = hex::encode((next_block.timestamp as u32).to_be_bytes());
 
+    // Verify PrevHash length (Miners expect 32 bytes = 64 hex / BE)
+    let prev_hash = if next_block.previous_hash == "0" {
+        "0000000000000000000000000000000000000000000000000000000000000000".to_string()
+    } else {
+        next_block.previous_hash.clone()
+    };
+
     serde_json::json!({
         "id": null, "method": "mining.notify",
-        "params": [ job_id, next_block.previous_hash, coinb1, cb2, branch, version_hex, bits_hex, ntime_hex, true ]
+        "params": [ job_id, prev_hash, coinb1, cb2, branch, version_hex, bits_hex, ntime_hex, true ]
     })
 } 
 
@@ -200,8 +207,8 @@ impl StratumServer {
                     thread::sleep(Duration::from_millis(500));
                     
                     let (h, next_block) = {
-                        let c = chain.lock().unwrap();
-                        let pool_addr = wallet.lock().unwrap().get_address();
+                        let c = chain.lock().unwrap_or_else(|e| e.into_inner());
+                        let pool_addr = wallet.lock().unwrap_or_else(|e| e.into_inner()).get_address();
                         (c.get_height(), c.get_mining_candidate(pool_addr))
                     };
                     
@@ -210,7 +217,7 @@ impl StratumServer {
                     // Check if update needed
                     let mut update_needed = false;
                     {
-                        let state = job_state.lock().unwrap();
+                        let state = job_state.lock().unwrap_or_else(|e| e.into_inner());
                         let last_h = state.block_template.as_ref().map(|b| b.index).unwrap_or(0);
                         let last_tx_count = state.block_template.as_ref().map(|b| b.transactions.len()).unwrap_or(0);
                         
@@ -226,7 +233,7 @@ impl StratumServer {
                     if update_needed {
                          // Include Tx Count in Job ID to force unique ID when Txs change but timestamp is same
                          let job_id = format!("{}_{}_{}", next_block.index, next_block.timestamp, next_block.transactions.len());
-                         let pool_addr = wallet.lock().unwrap().get_address();
+                         let pool_addr = wallet.lock().unwrap_or_else(|e| e.into_inner()).get_address();
                          
                          if pool_addr == "LOCKED" {
                              println!("[Stratum] WARNING: Wallet LOCKED. Cannot generate valid jobs.");
@@ -235,7 +242,7 @@ impl StratumServer {
 
                          let notify = create_mining_notify(&next_block, &job_id, &pool_addr);
                          
-                         let mut state = job_state.lock().unwrap();
+                         let mut state = job_state.lock().unwrap_or_else(|e| e.into_inner());
                          state.job_id = job_id;
                          state.notify_json = notify;
                          state.block_template = Some(next_block.clone());
@@ -255,7 +262,7 @@ impl StratumServer {
 
         thread::spawn(move || {
             let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).expect("Failed to bind Stratum port");
-            println!("[Stratum] Listening on 0.0.0.0:{} [Mode: {:?}]", port, *mode_ref.lock().unwrap());
+            println!("[Stratum] Listening on 0.0.0.0:{} [Mode: {:?}]", port, *mode_ref.lock().unwrap_or_else(|e| e.into_inner()));
             
             for stream in listener.incoming() {
                 match stream {
@@ -307,7 +314,7 @@ impl StratumServer {
         // -------------------------------------------------------------
         // PPS PAYOUT PROCESSOR (Runs if Mode == PPS)
         // -------------------------------------------------------------
-        let settings_mode = *self.pool_mode.lock().unwrap();
+        let settings_mode = *self.pool_mode.lock().unwrap_or_else(|e| e.into_inner());
         if settings_mode == PoolMode::PPS {
             let chain_payout = self.blockchain.clone();
             thread::spawn(move || {
@@ -331,7 +338,7 @@ impl StratumServer {
                              let mut updates = Vec::new(); // (Miner, NewBalance)
                              
                              {
-                                 let chain = chain_payout.lock().unwrap();
+                                 let chain = chain_payout.lock().unwrap_or_else(|e| e.into_inner());
                                  if let Some(ref db) = chain.db {
                                      let balances = db.get_all_miner_balances();
                                      let mut current_nonce = chain.state.get_nonce(pool_addr);
@@ -359,7 +366,7 @@ impl StratumServer {
 
                              if !txs_to_push.is_empty() {
                                  println!("[Pool PPS] Sending {} Payouts...", txs_to_push.len());
-                                 let mut chain = chain_payout.lock().unwrap();
+                                 let mut chain = chain_payout.lock().unwrap_or_else(|e| e.into_inner());
                                  for tx in txs_to_push {
                                      chain.pending_transactions.push(tx);
                                  }
@@ -406,7 +413,7 @@ fn process_rpc_request(
     
     match req.method.as_str() {
         "mining.subscribe" => {
-            let en1 = extra_nonce_1_ref.lock().unwrap().clone();
+            let en1 = extra_nonce_1_ref.lock().unwrap_or_else(|e| e.into_inner()).clone();
             // Valid Stratum Response: [[ ["mining.set_difficulty", "id1"], ["mining.notify", "id2"] ], Extranonce1, Extranonce2_Size]
             // We use Unique Strings for IDs to prevent confusion with difficulty values.
             Some(serde_json::json!([
@@ -415,14 +422,14 @@ fn process_rpc_request(
             ]))
         },
         "mining.authorize" => {
-            *is_authorized.lock().unwrap() = true;
+            *is_authorized.lock().unwrap_or_else(|e| e.into_inner()) = true;
             if let Some(user_full) = req.params.get(0).and_then(|v| v.as_str()) {
                 let addr_part = user_full.split('.').next().unwrap_or(user_full);
-                *session_miner_addr.lock().unwrap() = addr_part.to_string();
+                *session_miner_addr.lock().unwrap_or_else(|e| e.into_inner()) = addr_part.to_string();
                 println!("[Stratum] Authorized Miner: {} (Worker: {})", addr_part, user_full);
             }
             // Reset height to force immediate notify
-            *last_notified_height.lock().unwrap() = 0; 
+            *last_notified_height.lock().unwrap_or_else(|e| e.into_inner()) = 0; 
             Some(serde_json::json!(true))
         },
         "mining.submit" => {
@@ -433,15 +440,15 @@ fn process_rpc_request(
                 req.params.get(4).and_then(|v|v.as_str())
             ) {
                 // Strict Job ID Check with 1-Deep History Buffer
-                let current_job = last_job_id_ref.lock().unwrap().clone();
-                let prev_job = prev_job_id_ref.lock().unwrap().clone();
+                let current_job = last_job_id_ref.lock().unwrap_or_else(|e| e.into_inner()).clone();
+                let prev_job = prev_job_id_ref.lock().unwrap_or_else(|e| e.into_inner()).clone();
                 
                 let (target_template, is_stale) = if jid == current_job {
                      // Current Job
-                     (current_block_template.lock().unwrap().clone(), false)
+                     (current_block_template.lock().unwrap_or_else(|e| e.into_inner()).clone(), false)
                 } else if jid == prev_job && !prev_job.is_empty() {
                      // Previous Job (Latency/Stale) - Valid for Payouts, Invalid for Block
-                     (prev_block_template_ref.lock().unwrap().clone(), true)
+                     (prev_block_template_ref.lock().unwrap_or_else(|e| e.into_inner()).clone(), true)
                 } else {
                     println!("[Stratum] Rejected Share (Unknown Job: {} | Curr: {})", jid, current_job);
                     return Some(serde_json::json!(false));
@@ -492,7 +499,7 @@ fn process_rpc_request(
                         
                         let pool_addr_hex = if pool_addr_from_template == "SYSTEM" || pool_addr_from_template.is_empty() {
                              // Fallback (Should not happen for valid templates)
-                             server_wallet.lock().unwrap().get_address()
+                             server_wallet.lock().unwrap_or_else(|e| e.into_inner()).get_address()
                         } else {
                              pool_addr_from_template.clone()
                         };
@@ -512,7 +519,7 @@ fn process_rpc_request(
                         let pub_key_hash_hex = hex::encode(pub_key_hash);
                         
                         let coinb2 = format!("ffffffff01{}1976a914{}88ac00000000", amt_hex, pub_key_hash_hex);
-                        let extra_nonce_1 = extra_nonce_1_ref.lock().unwrap().clone(); // Use session En1
+                        let extra_nonce_1 = extra_nonce_1_ref.lock().unwrap_or_else(|e| e.into_inner()).clone(); // Use session En1
                         let coinb = format!("{}{}{}{}", coinb1, extra_nonce_1, ex2, coinb2);
                         
                         // println!("[Stratum Debug] Reconstructed Coinbase: {}", coinb);
@@ -605,56 +612,19 @@ fn process_rpc_request(
 
 
                         // TARGET CHECKS
-                        // TARGET CHECKS
-                        // We must validate against the ACTUAL block difficulty (Bits), not a hardcoded string.
-                        // Extract required zeros from Bits (Simplified: 0x1d00ffff -> Diff 1 -> ~32 zeros? No, Diff 1 is ~8 hex zeros)
-                        // For MVP, we use the helper in block.rs if available, or reproduce basic logic.
-                        // Block::check_pow expects 'distinct_bits' (u32 count of zeros).
-                        // Let's decode bits back to target.
-                        // 0x1d00ffff: Exponent 0x1d (29), Coeff 0x00ffff. Target = 0x00ffff * 256^(29-3).
-                        // This is complex to check precisely in one line.
-                        // However, standard mining relies on hash < target.
-                        // Let's us a safer check:
-                        // "00000000" corresponds to Diff 1 (High/Low diff).
-                        // If we are Mainnet, we need dynamic check.
-                        // For this specific 'Volt' implementation, difficulty is fixed at 1 (0x1d00ffff) usually.
-                        // But to be "Logical", we should check checking usage.
-                        // Let's assume Diff 1 for now but mark it as explicit minimum.
+                        // Validate against the ACTUAL block difficulty (Bits)
                         
-                        // BETTER FIX: Check against the Block's stored Bits
-                        // We implement a quick hash < target check if possible.
-                        // Since we don't have a Uint256 library handy here, we will stick to the 'starts_with' 
-                        // BUT we ensure it matches the Block's difficulty approximately.
-                        // If Block Diff is 1, expect 8 zeros.
-                        // If Block Diff is higher, expect more.
-                        // Let's use the Block::check_pow from before? logic is confusing there.
-                        // Reverting to SAFE hardcoded minimum for this 'Bug Search' request, 
-                        // BUT adding a comment that this must be dynamic in Production.
+                        let query_diff = block.difficulty;
+                        let exp = (query_diff >> 24) & 0xff;
                         
-                        // WAIT! User asked for "Illogical". Testing Logic:
-                        // If block.difficulty == 0x1d00ffff, acceptable hash starts with "00000000".
-                        // If block.difficulty changes, this code BREAKS.
-                        // I will add a dynamic check based on difficulty.
-                        
-                        // FIX: Dynamic Block Difficulty Check
-                        // Decode Compact Bits (e.g., 0x1d00ffff) to approximate required zero bits.
-                        // 0x1d00ffff -> Diff 1 -> ~32 bits (8 hex zeros)
-                        // 0x207fffff -> Diff Min -> ~0 bits
-                        // Formula: 8 * (0x1d - (bits >> 24))
-                        // Exp = bits >> 24.
-                        // Standard (0x1d) = 29 bytes. 32 - 29 = 3 bytes (24 bits) + mantissa adjustment?
-                        // Let's use the same logic as chain.rs approx or better.
-                        // Chain requires "0" * 4 for diff 1? No, chain requires prefix.
-                        
-                        let diff_bits = block.difficulty;
-                        let exp = (diff_bits >> 24) & 0xff;
+                        // Calculate required zero bits for the Block Target
+                        // 0x1d00ffff (Diff 1) requires ~32 zero bits
                         let required_zeros_bits = if exp <= 0x1d {
                              // Harder than or equal to Diff 1
-                             // 0x1d = 32 bits (approx)
-                             // 0x1c = 40 bits
                              32 + (0x1d - exp) * 8
                         } else {
-                             // Easier (e.g. 0x1f, 0x20)
+                             // Easier (e.g., Testnet Min Diff 0x207fffff)
+                             // 0x20 is ~0 bits required (very easy)
                              if exp >= 0x20 { 0 } else { 
                                  32u32.saturating_sub((exp - 0x1d) * 8)
                              }
@@ -662,15 +632,17 @@ fn process_rpc_request(
                         
                         let is_valid_block = crate::block::Block::check_pow(&block.hash, required_zeros_bits);
 
-
-                        // SHARE CHECK (Relaxed for Testnet)
-                        // Difficulty 0x207fffff requires very little work (starts with 0 bit).
-                        // We set it to 1 bit to accept almost anything validly structured.
-                        let is_valid_share = crate::block::Block::check_pow(&block.hash, 1); 
+                        // SHARE CHECK
+                        // We enforce a minimum share difficulty of 1 (approx 32 zero bits) to prevent low-diff spam.
+                        // This matches the 'difficulty: 1.0' assigned to shares below.
+                        // Note: If on Testnet with Min Diff 0x207fffff, shares might be easier than Diff 1.
+                        // To support Testnet mining, we dynamically lower share requirement if Block Diff is very low.
+                        let share_diff_bits = if required_zeros_bits < 32 { required_zeros_bits } else { 32 };
+                        let is_valid_share = crate::block::Block::check_pow(&block.hash, share_diff_bits); 
 
                         if is_valid_block {
                              println!("[Pool] BLOCK FOUND! Hash: {}", block.hash);
-                             let mut chain_lock = chain.lock().unwrap();
+                             let mut chain_lock = chain.lock().unwrap_or_else(|e| e.into_inner());
                              
                              // Check Staleness relative to current chain tip
                              let tip = chain_lock.get_last_block().unwrap_or_else(|| chain_lock.create_genesis_block());
@@ -687,28 +659,40 @@ fn process_rpc_request(
                                  let total_reward = crate::block::Block::get_block_reward(block.index) as f64; 
                                  let fee = 0.0;
                                  let distributable = total_reward - fee;
-                                 let mut shares_lock = shares_ref.lock().unwrap();
+                                 let mut shares_lock = shares_ref.lock().unwrap_or_else(|e| e.into_inner());
                                  let total_shares: f64 = shares_lock.iter().map(|s| s.difficulty).sum();
                                  if total_shares > 0.0 {
-                                     let reward_per_share = distributable / total_shares;
-                                     let mut payouts: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+                                     // PPLNS Payout Logic (Integer Math Refactor)
+                                     let mut payouts: std::collections::HashMap<String, u128> = std::collections::HashMap::new();
+                                     let precision_scale = 1_000_000_000u128; // Scale float difficulty to u128
+                                     let mut total_shares_weight = 0u128;
+
                                      for s in shares_lock.iter() {
-                                         *payouts.entry(s.miner.clone()).or_insert(0.0) += s.difficulty * reward_per_share;
+                                         // Convert share difficulty (f64) to weighted integer
+                                         let weight = (s.difficulty * precision_scale as f64) as u128;
+                                         *payouts.entry(s.miner.clone()).or_insert(0) += weight;
+                                         total_shares_weight += weight;
                                      }
+
                                      // FIX: Iterate by reference to avoid moving 'payouts'
-                                     for (_miner, _amount) in &payouts {
-                                         // If stale, we might reduce reward? For PPLNS, usually full credit.
-                                         // But WE CANNOT SUBMIT STALE BLOCK TO CHAIN.
+                                     for (_miner, _weight) in &payouts {
                                          if is_stale { continue; } 
                                      } 
+
                                      if is_stale {
                                           println!("[Stratum] Stale Block - Valid PoW but old parent. Submitting as Share only.");
                                      } else {
-                                          // Logic continues...
-                                          let pool_addr = server_wallet.lock().unwrap().get_address();
+                                          let pool_addr = server_wallet.lock().unwrap_or_else(|e| e.into_inner()).get_address();
                                           let mut current_nonce = chain_lock.state.get_nonce(&pool_addr);
-                                     for (miner, amount) in payouts { // Consume here is fine
-                                         let amount_u64 = amount as u64;
+                                          
+                                          // Distribute Reward based on Weight
+                                          for (miner, weight) in payouts {
+                                               let distributable_u128 = distributable as u128;
+                                               let payout_amount = if total_shares_weight > 0 {
+                                                   (weight * distributable_u128) / total_shares_weight
+                                               } else { 0 };
+                                               
+                                               let amount_u64 = payout_amount as u64;
                                          let base_fee = 100_000;
                                          let percentage_fee = (amount_u64 as f64 * 0.001) as u64;
                                          let tx_fee = base_fee + percentage_fee;
@@ -718,7 +702,7 @@ fn process_rpc_request(
                                               let tx = crate::transaction::Transaction::new(
                                                   pool_addr.clone(), miner.clone(), net_amount, "VLT".to_string(), current_nonce, tx_fee
                                               );
-                                              if let Some(pk) = &server_wallet.lock().unwrap().private_key {
+                                              if let Some(pk) = &server_wallet.lock().unwrap_or_else(|e| e.into_inner()).private_key {
                                                  use k256::ecdsa::signature::Signer;
                                                  let signature: k256::ecdsa::Signature = pk.sign(&tx.get_hash());
                                                  let mut signed_tx = tx.clone();
@@ -739,12 +723,12 @@ fn process_rpc_request(
                             // println!("[Stratum] Share Accepted ...");
 
                             
-                            let mut s_lock = shares_ref.lock().unwrap();
+                            let mut s_lock = shares_ref.lock().unwrap_or_else(|e| e.into_inner());
                             if s_lock.len() > 5000 { s_lock.remove(0); } // Prevent Memory Leak
                             let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or(std::time::Duration::from_secs(0)).as_secs();
                             
                             s_lock.push(crate::stratum::Share { // Fully qualified just in case
-                                miner: session_miner_addr.lock().unwrap().clone(),
+                                miner: session_miner_addr.lock().unwrap_or_else(|e| e.into_inner()).clone(),
                                 difficulty: 1.0, // Credit for Diff 1 Share
                                 timestamp: now,
                             });
@@ -793,10 +777,11 @@ fn handle_client(
     let last_notified_height = Arc::new(Mutex::new(0u64)); 
     
     // Generate Unique ExtraNonce1 (Random 4 bytes hex)
-    use rand::Rng;
-    let mut rng = rand::thread_rng();
-    let random_u32: u32 = rng.gen();
-    let extra_nonce_1_val = format!("{:08x}", random_u32);
+    // Generate Unique ExtraNonce1 (Random 4 bytes hex)
+    use rand_core::{RngCore, OsRng};
+    let mut random_bytes = [0u8; 4];
+    OsRng.fill_bytes(&mut random_bytes);
+    let extra_nonce_1_val = hex::encode(random_bytes);
     let extra_nonce_1 = Arc::new(Mutex::new(extra_nonce_1_val)); // Session State 
     
     // FIX: Add duplicate share tracker
@@ -811,13 +796,13 @@ fn handle_client(
     thread::spawn(move || {
         loop {
             thread::sleep(Duration::from_millis(200)); 
-            if !*auth_n.lock().unwrap() { continue; }
+            if !*auth_n.lock().unwrap_or_else(|e| e.into_inner()) { continue; }
             
             let (new_notify, new_block, new_id) = {
-                 let state = job_src_n.lock().unwrap();
+                 let state = job_src_n.lock().unwrap_or_else(|e| e.into_inner());
                  if state.job_id == "INIT" { continue; }
                  
-                 let my_last = last_job_n.lock().unwrap().clone();
+                 let my_last = last_job_n.lock().unwrap_or_else(|e| e.into_inner()).clone();
                  if state.job_id != my_last {
                      (Some(state.notify_json.clone()), state.block_template.clone(), state.job_id.clone())
                  } else { (None, None, "".to_string()) }
@@ -825,14 +810,14 @@ fn handle_client(
 
             if let Some(notify) = new_notify {
                 // Shift History
-                let last = last_job_n.lock().unwrap().clone();
+                let last = last_job_n.lock().unwrap_or_else(|e| e.into_inner()).clone();
                 if !last.is_empty() {
-                    *prev_job_n.lock().unwrap() = last;
-                    *prev_block_n.lock().unwrap() = block_n.lock().unwrap().clone();
+                    *prev_job_n.lock().unwrap_or_else(|e| e.into_inner()) = last;
+                    *prev_block_n.lock().unwrap_or_else(|e| e.into_inner()) = block_n.lock().unwrap_or_else(|e| e.into_inner()).clone();
                 }
 
-                *block_n.lock().unwrap() = new_block;
-                *last_job_n.lock().unwrap() = new_id;
+                *block_n.lock().unwrap_or_else(|e| e.into_inner()) = new_block;
+                *last_job_n.lock().unwrap_or_else(|e| e.into_inner()) = new_id;
                 
                 if let Ok(s) = serde_json::to_string(&notify) {
                      if stream_writer_notify.write_all((s + "\n").as_bytes()).is_err() { break; }
@@ -842,34 +827,67 @@ fn handle_client(
     }); 
 
 
+    // DoS Protection: Set Timeout (Slowloris)
+    let _ = stream_writer_resp.set_read_timeout(Some(Duration::from_secs(60)));
+
     let mut reader = BufReader::new(stream_reader);
     let mut line = String::new();
     loop {
         line.clear();
-        if reader.read_line(&mut line).unwrap_or(0) == 0 { break; }
-        if let Ok(req) = serde_json::from_str::<RpcRequest>(&line) {
-            let res = process_rpc_request(req.clone(), &chain, &mode_ref, &shares_ref, &wallet_ref, &session_miner_addr, 
-                &current_block_template, &is_authorized, &last_notified_height, &extra_nonce_1, &last_job_id, &prev_job_id, &prev_block_template, &mut submitted_nonces, &node); // Passed node
-            
-            if let Some(val) = res {
-                // FIX: Send Explicit Difficulty Notification BEFORE Response
-                // (Removed duplicate block - relying on the one AFTER response or merged)
-                // Actually, let's keep the one AFTER response to ensure client state is ready.
-                
-                let resp = RpcResponse { id: req.id, result: Some(val), error: None };
-                if let Ok(s) = serde_json::to_string(&resp) {
-                    let _ = stream_writer_resp.write_all((s + "\n").as_bytes());
-                    let _ = stream_writer_resp.flush();
+        
+        // DoS Protection: Bounded Read (Max 10KB per line)
+        let mut bytes = Vec::new();
+        let mut byte_buf = [0u8; 1];
+        let mut count = 0;
+        
+        // Read byte-by-byte to enforce limit before allocation
+        // BufReader makes this efficient (buffered)
+        use std::io::Read;
+        let mut found_newline = false;
+        loop {
+            match reader.read(&mut byte_buf) {
+                Ok(0) => break, // EOF
+                Ok(_) => {
+                    let b = byte_buf[0];
+                    if b == b'\n' { found_newline = true; break; }
+                    bytes.push(b);
+                    count += 1;
+                    if count > 10240 { 
+                        println!("[Stratum] DoS Prevention: Dropping oversized line");
+                        return; // Disconnect malicious client
+                    }
                 }
-
-                // Double check: Send AGAIN after response just in case miner ignored the first one
-                if req.method == "mining.subscribe" || req.method == "mining.authorize" {
-                     let diff_notify = serde_json::json!({
-                        "id": null, "method": "mining.set_difficulty", "params": [0.0001]
-                    });
-                    if let Ok(s) = serde_json::to_string(&diff_notify) {
-                         let _ = stream_writer_resp.write_all((s + "\n").as_bytes());
-                         let _ = stream_writer_resp.flush();
+                Err(_) => break, // Timeout or Error
+            }
+        }
+        
+        if bytes.is_empty() && !found_newline { break; } // EOF
+        
+        if let Ok(line_str) = String::from_utf8(bytes) {
+             if let Ok(req) = serde_json::from_str::<RpcRequest>(&line_str) {
+                let res = process_rpc_request(req.clone(), &chain, &mode_ref, &shares_ref, &wallet_ref, &session_miner_addr, 
+                    &current_block_template, &is_authorized, &last_notified_height, &extra_nonce_1, &last_job_id, &prev_job_id, &prev_block_template, &mut submitted_nonces, &node); // Passed node
+                
+                if let Some(val) = res {
+                    // FIX: Send Explicit Difficulty Notification BEFORE Response
+                    // (Removed duplicate block - relying on the one AFTER response or merged)
+                    // Actually, let's keep the one AFTER response to ensure client state is ready.
+                    
+                    let resp = RpcResponse { id: req.id, result: Some(val), error: None };
+                    if let Ok(s) = serde_json::to_string(&resp) {
+                        let _ = stream_writer_resp.write_all((s + "\n").as_bytes());
+                        let _ = stream_writer_resp.flush();
+                    }
+    
+                    // Double check: Send AGAIN after response just in case miner ignored the first one
+                    if req.method == "mining.subscribe" || req.method == "mining.authorize" {
+                         let diff_notify = serde_json::json!({
+                            "id": null, "method": "mining.set_difficulty", "params": [0.0001]
+                        });
+                        if let Ok(s) = serde_json::to_string(&diff_notify) {
+                             let _ = stream_writer_resp.write_all((s + "\n").as_bytes());
+                             let _ = stream_writer_resp.flush();
+                        }
                     }
                 }
             }
@@ -916,11 +934,11 @@ fn handle_client_ws(
 
     loop {
         // 1. Check Notifications (Inline - Single Threaded Loop)
-        if *is_authorized.lock().unwrap() {
+        if *is_authorized.lock().unwrap_or_else(|e| e.into_inner()) {
             let (new_notify, new_block, new_id) = {
-                 let state = job_source.lock().unwrap();
+                 let state = job_source.lock().unwrap_or_else(|e| e.into_inner());
                  if state.job_id != "INIT" {
-                     let my_last = last_job_id.lock().unwrap().clone();
+                     let my_last = last_job_id.lock().unwrap_or_else(|e| e.into_inner()).clone();
                      if state.job_id != my_last {
                         (Some(state.notify_json.clone()), state.block_template.clone(), state.job_id.clone())
                      } else {
@@ -931,7 +949,7 @@ fn handle_client_ws(
 
             if let Some(notify) = new_notify {
                 // Shift History
-                let last = last_job_id.lock().unwrap().clone();
+                let last = last_job_id.lock().unwrap_or_else(|e| e.into_inner()).clone();
                 if !last.is_empty() {
                     *prev_job_id.lock().unwrap() = last;
                     *prev_block_template.lock().unwrap() = current_block_template.lock().unwrap().clone();
