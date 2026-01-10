@@ -1247,7 +1247,8 @@ impl Blockchain {
         self.pending_transactions.retain(|tx| {
             if tx.sender == "SYSTEM" { return true; }
             if !tx.verify() {
-                 println!("[Mempool] ⚠️ Keeping Invalid Tx (Permissive Mode): {}", hex::encode(tx.get_hash()));
+                 // SILENCED: User finds this log spammy. Permissive mode is active.
+                 // println!("[Mempool] ⚠️ Keeping Invalid Tx (Permissive Mode): {}", hex::encode(tx.get_hash()));
                  return true; // RESTORED: User confirmed this was working (Permissive Chain Validation)
             }
             true
