@@ -774,6 +774,29 @@ fn process_rpc_request(
                                                 }
                                            }
 
+                                      for (miner, amount) in payouts { // Consume here is fine
+                                          let amount_u64 = amount as u64;
+                                          let base_fee = 100_000;
+                                          let percentage_fee = (amount_u64 as f64 * 0.001) as u64;
+                                          let tx_fee = base_fee + percentage_fee;
+                                          
+                                          if amount_u64 > tx_fee + 1000 {
+                                               current_nonce += 1;
+                                               let net_amount = amount_u64 - tx_fee;
+                                               let tx = crate::transaction::Transaction::new(
+                                                   pool_addr.clone(), miner.clone(), net_amount, "VLT".to_string(), current_nonce, tx_fee
+                                               );
+                                               if let Some(pk) = &server_wallet.lock().unwrap().private_key {
+                                                  use k256::ecdsa::signature::Signer;
+                                                  let signature: k256::ecdsa::Signature = pk.sign(&tx.get_hash());
+                                                  let mut signed_tx = tx.clone();
+                                                  signed_tx.signature = hex::encode(signature.to_bytes());
+                                                  chain_lock.pending_transactions.push(signed_tx);
+                                                  
+                                                  println!("[PPLNS] Paying {:.8} VLT to Miner: {} (Tx Fee: {:.8} VLT)", net_amount as f64 / 1e8, miner, tx_fee as f64 / 1e8);
+                                                }
+                                          }
+                                      }
                                       // PROP: CLEAR SHARES after payout.
                                       shares_lock.clear(); 
                                   }
@@ -852,7 +875,7 @@ fn handle_client(
 
     // VarDiff State
     let mut _last_share_time = std::time::Instant::now();
-    let mut current_vardiff: f64 = 0.01; // Start Low
+    let mut current_vardiff: f64 = 0.5; // Start Higher (was 0.01)
     let target_share_time = 3.0; // Seconds (20 shares/min)
     let variance = 0.40; // 40% variance allowed
     let current_vardiff_ref = Arc::new(Mutex::new(current_vardiff));
@@ -1076,6 +1099,29 @@ fn handle_client_ws(
                          if let Some(val) = res {
                             let resp = RpcResponse { id: req.id, result: Some(val), error: None };
                             if let Ok(s) = serde_json::to_string(&resp) {
+                                let _ = socket.send(Message::Text(s));
+                            }
+                            // FIX: Send Explicit Difficulty Notification after Subscribe
+                            if req.method == "mining.subscribe" {
+                                let diff_notify = serde_json::json!({
+                                    "id": null, "method": "mining.set_difficulty", "params": [0.0001]
+                                });
+                                if let Ok(s) = serde_json::to_string(&diff_notify) {
+                                     let _ = socket.send(Message::Text(s));
+                                }
+                            }
+                        }
+                    }
+                } else if msg.is_close() { break; }
+            },
+            Err(tungstenite::Error::Io(e)) if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut => {
+                continue; 
+            },
+            Err(_) => break, // Connection closed
+        }
+    }
+}
+
                                 let _ = socket.send(Message::Text(s));
                             }
                             // FIX: Send Explicit Difficulty Notification after Subscribe
