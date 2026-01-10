@@ -419,10 +419,14 @@ impl Blockchain {
                     // Check if Genesis matches new Static Consensus
                     if let Ok(Some(existing_genesis)) = db.get_block(0) {
                         let expected_genesis = blockchain.create_genesis_block();
+                        // DEBUG PERSISTENCE:
+                        println!("[Core] Checking Genesis Consistency...");
+                        println!("[Core] Stored (DB):   {}", existing_genesis.hash);
+                        println!("[Core] Computed (Code): {}", expected_genesis.hash);
+                        
                         if existing_genesis.hash != expected_genesis.hash {
                              println!("[Core] CRITICAL: Genesis Mismatch detected!");
-                             println!("[Core] DB Genesis: {}", existing_genesis.hash);
-                             println!("[Core] New Consensus: {}", expected_genesis.hash);
+                             println!("[Core] Diff: Stored != Computed");
                              println!("[Core] Initiating Auto-Wipe to upgrade chain...");
                              wipe_db = true;
                         } else {
