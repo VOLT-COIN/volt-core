@@ -1250,6 +1250,23 @@ impl Blockchain {
         // BITCOIN-LIKE FEE MARKET
         // Prioritize transactions with higher fees (Fee Density)
         // ---------------------------------------------------------
+        
+        // CLEANUP: Filter out Invalid Signatures BEFORE including in block
+        // This purges the "Zombie" PPLNS transactions causing the infinite error loop.
+        txs.retain(|tx| {
+            if tx.sender == "SYSTEM" { return true; }
+            if !tx.verify() {
+                 println!("[Mempool] 🗑️ Discarding Invalid Tx: {}", hex::encode(tx.get_hash()));
+                 return false; 
+            }
+            true
+        });
+
+        // Also update the global pending list to reflect this cleanup?
+        // Sadly 'txs' here is a clone. We need to lock and clear the main list?
+        // For now, this ensures the BLOCK TEMPLATE is clean, which allows the block to be accepted.
+        // We will do a lazy cleanup on the main list later if needed, but this unblocks the chain.
+        
         txs.sort_by(|a, b| b.fee.cmp(&a.fee));
 
         // Limit transactions to prevent oversized blocks (Reserve 200 slots for System/Stake txs)
@@ -1444,6 +1461,9 @@ impl Blockchain {
                    println!("[Security] Fraudulent Stake Claim: Claimed {}, Real {}", block.validator_stake, real_stake);
                    return false;
               }
+         } else {
+              println!("[Security] No Coinbase found in block!");
+              return false;
          }
 
          // 5. Verify Timestamp (Time Warp Protection)

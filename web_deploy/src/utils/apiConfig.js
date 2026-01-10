@@ -7,7 +7,7 @@ return {
     baseURL: url, // Axios will prepend this to '/api/rpc'
     headers: { 'Content-Type': 'application/json' }
 };
-};
+
 
 // Start Helper for POST payloads with password
 export const getPayload = (cmd, data = {}) => ({
