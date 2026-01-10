@@ -695,6 +695,21 @@ fn process_rpc_request(
 
                         if is_valid_block {
                              println!("[Pool] BLOCK FOUND! Hash: {}", block.hash);
+                             
+                             // FIX: Record the Winning Share BEFORE calculating payouts!
+                             {
+                                 let mut s_lock = shares_ref.lock().unwrap();
+                                 if s_lock.len() > 5000 { s_lock.remove(0); }
+                                 let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or(std::time::Duration::from_secs(0)).as_secs();
+                                 
+                                 s_lock.push(crate::stratum::Share { 
+                                     miner: session_miner_addr.lock().unwrap().clone(),
+                                     difficulty: current_block_template.lock().unwrap().as_ref().map(|b| b.difficulty as f64).unwrap_or(1.0), 
+                                     timestamp: now,
+                                 });
+                                 println!("[Stratum] Winning Share Recovered & Recorded.");
+                             }
+
                              let mut chain_lock = chain.lock().unwrap();
                              
                              // Check Staleness relative to current chain tip
