@@ -485,74 +485,115 @@ impl Node {
                     let peers_inner = peers_client.clone();
 
                     thread::spawn(move || {
-                        let ws_url = format!("ws://{}", peer_addr);
-                        if let Ok((mut socket, _)) = tungstenite::connect(ws_url) {
-                            // Handshake: GetPeers
-                            let _ = socket.send(tungstenite::Message::Text(serde_json::to_string(&Message::GetPeers).unwrap_or_default()));
-                            
-                            // Header-First Sync: Ask for headers first
-                            let (_my_height, locator) = {
-                                let c = chain_inner.lock().unwrap();
-                                let h = c.get_height() as usize;
-                                let hash = c.get_last_block().map(|b| b.hash).unwrap_or("0".to_string());
-                                (h, hash)
-                            };
-
-                            let msg = Message::GetHeaders { locator };
-                             
-                            if let Ok(json) = serde_json::to_string(&msg) {
-                                let _ = socket.send(tungstenite::Message::Text(json));
-                            }
-                            
-                            // Listen for Response (Short lived connection for sync step)
-                            // We wait for a few seconds to receive data then close
-                            // socket.get_mut().set_read_timeout... (Disabled for compilation if method missing on wrapper)
-                            // socket.get_mut().set_read_timeout(Some(Duration::from_secs(5))).ok();
-                            
-                            let start_time = std::time::Instant::now();
-                            while start_time.elapsed() < Duration::from_secs(5) {
-                                // Non-blocking read attempt loop not easily possible with standard tungstenite without stream access.
-                                // FIX: Use explicit break on timeout if read returns WouldBlock, OR just trust the timeout if set.
-                                // Since we couldn't set timeout easily above due to type wrapper, we rely on the loop.
-                                // But socket.read() is BLOCKING.
-                                // We MUST set non-blocking on the stream before passing to tungstenite or use tokio.
-                                // For this sync thread (std::thread), we can't easily change to async.
-                                // Best effort: Only read if we expect data, and accept risk of 1 block hanging thread for now.
-                                // BETTER FIX: Break if first read fails.
-                                if let Ok(msg) = socket.read() {
-                                    if msg.is_text() {
-                                        let text = msg.to_text().unwrap_or("{}");
-                                        if let Ok(parsed) = serde_json::from_str::<Message>(text) {
-                                             match parsed {
-                                                Message::Peers(new_p) => {
-                                                     let mut p_lock = peers_inner.lock().unwrap();
-                                                     for np in new_p {
-                                                         if !p_lock.contains(&np) { p_lock.push(np); }
-                                                     }
-                                                },
-                                                Message::Chain(chunk) => {
-                                                     let mut c = chain_inner.lock().unwrap();
-                                                     if let Some(first) = chunk.first() {
-                                                         if first.index == 0 { c.attempt_chain_replacement(chunk); }
-                                                         else { c.handle_sync_chunk(chunk); }
-                                                     }
-                                                },
-                                                Message::Headers(headers) => {
-                                                    println!("[Sync] Client Received {} Headers. Requesting Blocks...", headers.len());
-                                                    if let Some(first) = headers.first() {
-                                                        let start = first.index as usize;
-                                                        let limit = headers.len();
-                                                        let msg_get = Message::GetBlocks { start, limit };
-                                                        if let Ok(req_json) = serde_json::to_string(&msg_get) {
-                                                            let _ = socket.send(tungstenite::Message::Text(req_json));
+                        if peer_addr.starts_with("ws://") || peer_addr.starts_with("wss://") {
+                            let ws_url = peer_addr.clone(); // Already has protocol
+                            if let Ok((mut socket, _)) = tungstenite::connect(ws_url) {
+                                // Handshake: GetPeers
+                                let _ = socket.send(tungstenite::Message::Text(serde_json::to_string(&Message::GetPeers).unwrap_or_default()));
+                                
+                                // Header-First Sync: Ask for headers first
+                                let (_my_height, locator) = {
+                                    let c = chain_inner.lock().unwrap();
+                                    let h = c.get_height() as usize;
+                                    let hash = c.get_last_block().map(|b| b.hash).unwrap_or("0".to_string());
+                                    (h, hash)
+                                };
+    
+                                let msg = Message::GetHeaders { locator };
+                                 
+                                if let Ok(json) = serde_json::to_string(&msg) {
+                                    let _ = socket.send(tungstenite::Message::Text(json));
+                                }
+                                
+                                // Listen for Response
+                                let start_time = std::time::Instant::now();
+                                while start_time.elapsed() < Duration::from_secs(5) {
+                                    if let Ok(msg) = socket.read() {
+                                        if msg.is_text() {
+                                            let text = msg.to_text().unwrap_or("{}");
+                                            if let Ok(parsed) = serde_json::from_str::<Message>(text) {
+                                                 match parsed {
+                                                    Message::Peers(new_p) => {
+                                                         let mut p_lock = peers_inner.lock().unwrap();
+                                                         for np in new_p {
+                                                             if !p_lock.contains(&np) { p_lock.push(np); }
+                                                         }
+                                                    },
+                                                    Message::Chain(chunk) => {
+                                                         let mut c = chain_inner.lock().unwrap();
+                                                         if let Some(first) = chunk.first() {
+                                                             if first.index == 0 { c.attempt_chain_replacement(chunk); }
+                                                             else { c.handle_sync_chunk(chunk); }
+                                                         }
+                                                    },
+                                                    Message::Headers(headers) => {
+                                                        println!("[Sync] Client Received {} Headers. Requesting Blocks...", headers.len());
+                                                        if let Some(first) = headers.first() {
+                                                            let start = first.index as usize;
+                                                            let limit = headers.len();
+                                                            let msg_get = Message::GetBlocks { start, limit };
+                                                            if let Ok(req_json) = serde_json::to_string(&msg_get) {
+                                                                let _ = socket.send(tungstenite::Message::Text(req_json));
+                                                            }
                                                         }
-                                                    }
-                                                },
-                                                _ => {}
-                                             }
+                                                    },
+                                                    _ => {}
+                                                 }
+                                            }
                                         }
+                                    } else { break; }
+                                }
+                            }
+                        } else {
+                            // TCP Sync Logic
+                            if let Ok(mut stream) = TcpStream::connect(&peer_addr) {
+                                // Handshake: GetPeers
+                                let _ = stream.write_all(serde_json::to_string(&Message::GetPeers).unwrap_or_default().as_bytes());
+                                
+                                let locator = {
+                                    let c = chain_inner.lock().unwrap();
+                                    c.get_last_block().map(|b| b.hash).unwrap_or("0".to_string())
+                                };
+
+                                let msg = Message::GetHeaders { locator };
+                                if let Ok(json) = serde_json::to_string(&msg) {
+                                    let _ = stream.write_all(json.as_bytes());
+                                }
+
+                                // Read Loop (Short Lived)
+                                let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+                                let mut de = serde_json::Deserializer::from_reader(&stream);
+                                while let Ok(parsed) = Message::deserialize(&mut de) {
+                                    match parsed {
+                                        Message::Peers(new_p) => {
+                                            let mut p_lock = peers_inner.lock().unwrap();
+                                            for np in new_p {
+                                                if !p_lock.contains(&np) { p_lock.push(np); }
+                                            }
+                                        },
+                                        Message::Chain(chunk) => {
+                                            let mut c = chain_inner.lock().unwrap();
+                                            if let Some(first) = chunk.first() {
+                                                if first.index == 0 { c.attempt_chain_replacement(chunk); }
+                                                else { c.handle_sync_chunk(chunk); }
+                                            }
+                                            break; // Done after chain
+                                        },
+                                        Message::Headers(headers) => {
+                                            println!("[Sync] Client Received {} Headers via TCP. Requesting Blocks...", headers.len());
+                                            if let Some(first) = headers.first() {
+                                                let start = first.index as usize;
+                                                let limit = headers.len();
+                                                let msg_get = Message::GetBlocks { start, limit };
+                                                let _ = stream.write_all(serde_json::to_string(&msg_get).unwrap().as_bytes());
+                                                // Continue loop to receive Chain
+                                            } else {
+                                                break;
+                                            }
+                                        },
+                                        _ => {}
                                     }
-                                } else { break; }
+                                }
                             }
                         }
                     });
