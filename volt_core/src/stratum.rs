@@ -723,6 +723,8 @@ fn process_rpc_request(
                                   let shares_in_window: Vec<_> = shares_lock.iter().rev().take(pplns_window).collect();
                                   let total_shares_window: f64 = shares_in_window.iter().map(|s| s.difficulty).sum();
                                   
+                                  println!("[PPLNS Debug] Shares in Window: {}, Total Diff: {:.4}, Distributable: {:.4}", shares_in_window.len(), total_shares_window, distributable);
+
                                   if total_shares_window > 0.0 {
                                       let reward_per_share = distributable / total_shares_window;
                                       let mut payouts: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
@@ -730,6 +732,8 @@ fn process_rpc_request(
                                       for s in shares_in_window {
                                           *payouts.entry(s.miner.clone()).or_insert(0.0) += s.difficulty * reward_per_share;
                                       }
+                                      
+                                      println!("[PPLNS Debug] Payout Candidates: {}", payouts.len());
                                       
                                       // FIX: Iterate by reference to avoid moving 'payouts'
                                       for (_miner, _amount) in &payouts {
